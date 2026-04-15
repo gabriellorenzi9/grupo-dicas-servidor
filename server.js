@@ -4,6 +4,17 @@ const { put } = require('@vercel/blob');
 const app = express();
 app.use(express.json());
 
+// CORS - permitir requests do formulario
+app.use(function(req, res, next) {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 // Health check
 app.get('/', function(req, res) {
   res.json({ status: 'ok', service: 'Grupo Dicas Roteiro Generator' });
