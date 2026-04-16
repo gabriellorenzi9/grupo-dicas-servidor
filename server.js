@@ -248,6 +248,7 @@ var SYSTEM_PROMPT = [
 
 async function processarRoteiro(d) {
   console.log('Iniciando processamento para:', d.nome);
+  var startTime = Date.now();
 
   // 1. Salvar no Airtable
   var recordId = null;
@@ -337,9 +338,17 @@ async function processarRoteiro(d) {
     return;
   }
 
-  // 4. Enviar email
+  // 4. Aguardar antes de enviar email (para parecer que alguem preparou manualmente)
+  var DELAY_ENVIO_MS = 2 * 60 * 60 * 1000; // 2 horas em milissegundos
+  var tempoGeracaoMs = Date.now() - startTime;
+  var tempoEspera = Math.max(0, DELAY_ENVIO_MS - tempoGeracaoMs);
+  console.log('Roteiro pronto! Aguardando ' + Math.round(tempoEspera / 60000) + ' minutos antes de enviar email...');
+  await new Promise(function(resolve) { setTimeout(resolve, tempoEspera); });
+
+  // 5. Enviar email
   console.log('Enviando email para:', d.email);
   var nomeFirst = d.nome ? d.nome.split(' ')[0] : 'Viajante';
+  var destinoShort = d.destino ? d.destino.substring(0, 50) : 'sua viagem';
   try {
     var emailRes = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -351,8 +360,9 @@ async function processarRoteiro(d) {
         from: 'Grupo Dicas <roteiros@grupodicas.com>',
         reply_to: 'roteiros@grupodicas.com',
         to: [d.email],
-        subject: '\uD83C\uDF89 Seu roteiro personalizado est\u00E1 pronto!',
-        html: '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222222;line-height:1.6;max-width:600px;">'
+        subject: nomeFirst + ', seu roteiro de ' + destinoShort + ' ficou pronto!',
+        html: '<div style="display:none;max-height:0;overflow:hidden;font-size:1px;color:#f8f8f8;">J\u00E1 est\u00E1 tudo planejado para voc\u00EA, dia a dia, com dicas exclusivas e os melhores pre\u00E7os. Abre e confere!</div>'
+          + '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222222;line-height:1.6;max-width:600px;">'
           + '<p>Ol\u00E1, ' + nomeFirst + '! \uD83C\uDF89</p>'
           + '<p>O seu roteiro personalizado est\u00E1 pronto. Esperamos que goste. Ele est\u00E1 dispon\u00EDvel no link abaixo, e estar\u00E1 sempre l\u00E1 para voc\u00EA acessar.</p>'
           + '<p>J\u00E1 salva ele e compartilhe com quem for viajar com voc\u00EA:</p>'
@@ -372,7 +382,7 @@ async function processarRoteiro(d) {
     console.error('Erro ao enviar email:', e.message);
   }
 
-  // 5. Atualizar Airtable
+  // 6. Atualizar Airtable
   if (recordId) {
     await atualizarAirtable(recordId, 'Enviado');
   }
