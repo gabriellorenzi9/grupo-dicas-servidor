@@ -205,7 +205,8 @@ async function processarRoteiro(d) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        from: 'Grupo Dicas <onboarding@resend.dev>',
+        from: 'Grupo Dicas <roteiros@grupodicas.com>',
+        reply_to: 'roteiros@grupodicas.com',
         to: [d.email],
         subject: '\uD83C\uDF89 Seu roteiro personalizado est\u00E1 pronto!',
         html: '<div style="font-family:Poppins,sans-serif;max-width:600px;margin:0 auto;padding:40px 20px;">'
