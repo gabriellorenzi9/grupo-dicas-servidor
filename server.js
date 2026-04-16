@@ -209,20 +209,17 @@ async function processarRoteiro(d) {
         reply_to: 'roteiros@grupodicas.com',
         to: [d.email],
         subject: '\uD83C\uDF89 Seu roteiro personalizado est\u00E1 pronto!',
-        html: '<div style="font-family:Poppins,sans-serif;max-width:600px;margin:0 auto;padding:40px 20px;">'
-          + '<div style="text-align:center;margin-bottom:30px;">'
-          + '<h1 style="color:#00BCD4;font-size:28px;">GRUPO<span style="color:#E91E8C;">DICAS</span></h1>'
-          + '</div>'
-          + '<h2 style="color:#1A1A2E;">Ol\u00E1, ' + nomeFirst + '! \uD83C\uDF89</h2>'
-          + '<p style="color:#6B7280;font-size:16px;line-height:1.6;">O seu roteiro personalizado est\u00E1 pronto! Clique no bot\u00E3o abaixo para visualiz\u00E1-lo:</p>'
-          + '<div style="text-align:center;margin:30px 0;">'
-          + '<a href="https://grupo-dicas-roteiro.vercel.app/api/roteiro?id=' + roteiroId + '" style="background:#00BCD4;color:#ffffff;padding:16px 32px;border-radius:12px;text-decoration:none;font-weight:600;font-size:16px;display:inline-block;">\uD83D\uDDFA\uFE0F Ver meu Roteiro</a>'
-          + '</div>'
-          + '<p style="color:#6B7280;font-size:14px;">Esse ser\u00E1 o link para voc\u00EA sempre acess\u00E1-lo, ent\u00E3o j\u00E1 salve ele e compartilhe com quem for viajar com voc\u00EAs. :)</p>'
-          + '<p style="color:#6B7280;font-size:14px;">Boa viagem! \u2708\uFE0F</p>'
-          + '<p style="color:#6B7280;font-size:14px;">Equipe Grupo Dicas</p>'
-          + '<hr style="border:none;border-top:1px solid #E5E7EB;margin:30px 0;"/>'
-          + '<p style="color:#9CA3AF;font-size:12px;text-align:center;">www.grupodicas.com</p>'
+        html: '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222222;line-height:1.6;max-width:600px;">'
+          + '<p>Ol\u00E1, ' + nomeFirst + '! \uD83C\uDF89</p>'
+          + '<p>O seu roteiro personalizado est\u00E1 pronto. Esperamos que goste. Ele est\u00E1 dispon\u00EDvel no link abaixo, e estar\u00E1 sempre l\u00E1 para voc\u00EA acessar.</p>'
+          + '<p>J\u00E1 salva ele e compartilhe com quem for viajar com voc\u00EA:</p>'
+          + '<p>\uD83D\uDDFA\uFE0F <a href="https://grupo-dicas-roteiro.vercel.app/api/roteiro?id=' + roteiroId + '" style="color:#00BCD4;font-weight:bold;text-decoration:underline;">Ver meu Roteiro</a></p>'
+          + '<p><strong>Informa\u00E7\u00F5es importantes sobre a sua viagem:</strong></p>'
+          + '<p>1: Na \u00E9poca da sua viagem, os hot\u00E9is j\u00E1 est\u00E3o com uma boa procura, e por isso os pre\u00E7os est\u00E3o aumentando dia a dia. Encontramos algumas \u00F3timas op\u00E7\u00F5es, na melhor localiza\u00E7\u00E3o e com pre\u00E7os abaixo do normal. Nossa recomenda\u00E7\u00E3o \u00E9 que, se ainda n\u00E3o reservou o hotel, reserve o quanto antes. Pois esses pre\u00E7os devem subir em breve, e quanto antes fizer, mais barato ir\u00E1 pagar. Quando clicar nesses hot\u00E9is que sugerimos, eles ir\u00E3o abrir em um site (que \u00E9 o maior do mundo, e o melhor na nossa opini\u00E3o), e o bom dele \u00E9 que ele possui quase em todos os hot\u00E9is, a op\u00E7\u00E3o de cancelamento gratuito. Isso \u00E9 \u00F3timo para garantir esses pre\u00E7os baixos, antes que subam. Se depois voc\u00EA precisar alterar algo ou cancelar, n\u00E3o tem custo algum e \u00E9 super r\u00E1pido, com um clique. Isso vai fazer voc\u00EA economizar MUITO! N\u00E3o deixe para depois.</p>'
+          + '<p>2: Alguns ingressos e passeios, j\u00E1 est\u00E3o com datas quase esgotadas. Nossa recomenda\u00E7\u00E3o \u00E9 a mesma do hotel, comprar com o m\u00E1ximo de anteced\u00EAncia que puder. Em cada passeio que ver no seu roteiro, e que precisa ser comprado, ter\u00E1 um link para o site que o possui pelo menor pre\u00E7o. S\u00E3o todos sites que a gente confia e utiliza. E a maioria deles, tamb\u00E9m oferecem cancelamento gr\u00E1tis, e \u00E9 poss\u00EDvel pagar em reais. Isso faz voc\u00EA economizar muito, ao inv\u00E9s de comprar l\u00E1 na hora, ou nos sites oficiais que s\u00E3o na moeda local (onde voc\u00EA pagaria o IOF por ser outra moeda e convers\u00E3o cambial salgada do cart\u00E3o de cr\u00E9dito).</p>'
+          + '<p>Ent\u00E3o aproveite! Seguindo esse roteiro, voc\u00EA ter\u00E1 uma viagem inesquec\u00EDvel e economizar\u00E1 muito!</p>'
+          + '<p>Boa viagem! \u2708\uFE0F</p>'
+          + '<p>Equipe Grupo Dicas</p>'
           + '</div>'
       })
     });
