@@ -35,6 +35,74 @@ app.post('/gerar', function(req, res) {
   });
 });
 
+// =============================================================
+// SYSTEM PROMPT - REGRAS FIXAS (com prompt caching)
+// EDITE AQUI para refinar regras, seções, afiliados, tom de voz
+// =============================================================
+var SYSTEM_PROMPT = [
+  'Voce e um especialista em viagens do Grupo Dicas (grupodicas.com), o maior site de dicas de viagem do Brasil. Sua missao e criar roteiros de viagem personalizados, detalhados e com foco em ajudar brasileiros a economizar.',
+  '',
+  'FORMATO DE SAIDA',
+  'Gere APENAS codigo HTML completo. NAO inclua explicacoes, markdown ou backticks. O HTML deve comecar com <!DOCTYPE html>.',
+  'Use fonte Poppins do Google Fonts.',
+  'Use estas variaveis CSS: --primary: #00BCD4; --primary-dark: #0097A7; --primary-light: #E0F7FA; --magenta: #E91E8C; --text: #1A1A2E; --text-light: #6B7280; --white: #FFFFFF; --gray: #F3F4F6; --success: #10B981; --warning: #F59E0B; --danger: #EF4444;',
+  'Design responsivo, moderno e profissional. Pronto para visualizar no navegador.',
+  '',
+  'ESTRUTURA OBRIGATORIA DO ROTEIRO - TODAS AS 9 SECOES DEVEM ESTAR PRESENTES',
+  '',
+  '1. CAPA',
+  '- Fundo com linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%)',
+  '- Logo com icone de aviao em box com background rgba(255,255,255,0.2) border-radius 12px',
+  '- Texto do logo: GRUPO em branco, DICAS em rgba(255,255,255,0.8), font-size 24px font-weight 700',
+  '- Badge "Roteiro Personalizado" com background rgba(255,255,255,0.2), border-radius 50px, uppercase, letter-spacing 2px',
+  '- Titulo com paises em font-size 48px font-weight 800',
+  '- Subtitulo com cidades separadas por bullet, font-size 20px opacity 0.9',
+  '- 3 info cards com icones: datas da viagem, numero de pessoas e tipo, estilo de viagem',
+  '- Cada info card: icone em box 40x40 rgba(255,255,255,0.2) border-radius 10px + texto',
+  '- Rodape com fundo rgba(0,0,0,0.1): "Preparado especialmente para [Nome]" em font-size 18px bold',
+  '',
+  '2. RESUMO DA VIAGEM',
+  '- Titulo da secao com icone em box 50x50 gradiente primary, border-radius 12px + texto font-size 28px font-weight 700',
+  '- Grid 2x2 com cards de fundo var(--gray) border-radius 16px padding 20px',
+  '- Box de destinos com fundo primary-light, border 2px solid primary, border-radius 16px',
+  '- OBRIGATORIO: Box de clima com temperatura esperada para CADA cidade no periodo da viagem',
+  '',
+  '3. ONDE FICAR (HOSPEDAGEM)',
+  '- Texto introdutorio sobre hoteis que a equipe ja ficou e indica',
+  '- Box verde de economia sobre cancelamento gratuito',
+  '- Para CADA cidade: 2 hoteis com nota Booking 8.0+, avaliacoes 700+, distancias, link afiliado',
+  '- Box azul sobre por que reservar pelo Booking',
+  '',
+  '4. ANTES DE VIAJAR (CHECKLIST)',
+  '- Documentacao, Reservas, Financeiro, Itens para Levar',
+  '- Se Europa: SEGURO VIAGEM OBRIGATORIO',
+  '',
+  '5. ROTEIRO DIA A DIA',
+  'Para CADA dia: header com gradiente, 4-6 atividades com horario, emoji, descricao, preco em R$, dicas, links Civitatis, resumo do dia',
+  '',
+  '6. TRANSPORTE ENTRE CIDADES',
+  'Box amarelo com 3 opcoes, precos e recomendacao',
+  '',
+  '7. DICAS PARA ECONOMIZAR - 6 cards praticos',
+  '',
+  '8. BOXES DOS PARCEIROS - TODOS OBRIGATORIOS:',
+  'a) Seguro Viagem (verde) - Link: https://www.seguroviagem.srv.br/?ag=215&lead_tag=App_[Pais]&promo=18exclusivogrupodicas - NUNCA citar "Seguros Promo"',
+  'b) Chip (roxo) - Link: https://americachip.com/?oid=12&affid=103&sub1=App - NUNCA citar "America Chip"',
+  'c) Conta Global (vermelho) - Cupom GABRIELLORENZI20 - Link: https://nomad.onelink.me/wIQT/gabriellorenzi15 - NUNCA citar "Nomad"',
+  'd) Carros (azul) - Link: https://www.rentcars.com/pt-br/?campaign=App&content=[Pais]&requestorid=42&source=Carro - NUNCA citar "RentCars"',
+  '',
+  '9. CONTRACAPA - Fundo escuro, logo, tagline, site, nome viajante',
+  '',
+  'LINKS DE AFILIADOS:',
+  '- CIVITATIS: https://www.civitatis.com/pt/[cidade]/[passeio]/?aid=3472&cmp=App_[Pais]',
+  '- BOOKING: https://www.booking.com/hotel/[codigo-pais]/[nome-hotel].pt-br.html?aid=390200&label=App_[Pais]',
+  '- RAIL EUROPE (fixo): https://click.linksynergy.com/deeplink?id=czqBaUUVmPg&mid=42638&murl=https%3A%2F%2Fwww.raileurope.com%2F%3Fcountry%3DBR%26locale%3Dpt%26currency%3DEUR&u1=App',
+  '',
+  'TOM: Amigavel, como amigo que ja foi. Precos em R$. Vendedor sutil.',
+  '',
+  'Retorne APENAS o HTML completo, comecando com <!DOCTYPE html>.'
+].join('\n');
+
 async function processarRoteiro(d) {
   console.log('Iniciando processamento para:', d.nome);
 
@@ -82,58 +150,36 @@ async function processarRoteiro(d) {
 
   var roteiroId = recordId || ('rot_' + Date.now());
 
-  // 2. Chamar a Claude Opus
-  console.log('Chamando Claude Opus para roteiroId:', roteiroId);
-  var startTime = Date.now();
+  // 2. Gerar HTML via Claude Opus (com retry)
+  var html = null;
+  var maxTentativas = 2;
+  var tentativa = 0;
 
-  var prompt = buildPrompt(d);
+  while (tentativa < maxTentativas && !html) {
+    tentativa++;
+    console.log('=== Tentativa ' + tentativa + '/' + maxTentativas + ' para roteiroId:', roteiroId);
 
-  try {
-    console.log('Enviando request para API da Claude...');
-    console.log('API Key existe:', !!process.env.ANTHROPIC_API_KEY);
-    console.log('API Key inicio:', process.env.ANTHROPIC_API_KEY ? process.env.ANTHROPIC_API_KEY.substring(0, 12) : 'VAZIO');
-
-    var claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-opus-4-6',
-        max_tokens: 32000,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
-
-    var elapsed = Math.round((Date.now() - startTime) / 1000);
-    console.log('Claude respondeu em ' + elapsed + ' segundos, status:', claudeResponse.status);
-
-    var claudeText = await claudeResponse.text();
-    console.log('Claude resposta tamanho:', claudeText.length, 'chars');
-    console.log('Claude resposta inicio:', claudeText.substring(0, 200));
-
-    var claudeData;
     try {
-      claudeData = JSON.parse(claudeText);
-    } catch (parseErr) {
-      console.error('Erro ao parsear JSON da Claude:', parseErr.message);
-      if (recordId) await atualizarAirtable(recordId, 'Erro');
-      return;
+      html = await gerarHtmlComClaude(d);
+      console.log('HTML gerado com sucesso na tentativa', tentativa, '-', html.length, 'caracteres');
+    } catch (err) {
+      console.error('Tentativa ' + tentativa + ' falhou:', err.message);
+      if (tentativa < maxTentativas) {
+        var espera = 10000; // 10 segundos entre tentativas
+        console.log('Aguardando ' + (espera / 1000) + 's antes de tentar novamente...');
+        await new Promise(function(resolve) { setTimeout(resolve, espera); });
+      }
     }
+  }
 
-    if (!claudeData.content || !claudeData.content[0]) {
-      console.error('Claude nao retornou conteudo:', JSON.stringify(claudeData).substring(0, 500));
-      if (recordId) await atualizarAirtable(recordId, 'Erro');
-      return;
-    }
+  if (!html) {
+    console.error('FALHA TOTAL apos ' + maxTentativas + ' tentativas para roteiroId:', roteiroId);
+    if (recordId) await atualizarAirtable(recordId, 'Erro');
+    return;
+  }
 
-    var html = claudeData.content[0].text;
-    html = html.replace(/^```html\s*/i, '').replace(/```\s*$/i, '').trim();
-    console.log('HTML gerado com', html.length, 'caracteres');
-
-    // 3. Salvar no Blob
+  // 3. Salvar no Blob
+  try {
     console.log('Salvando no Blob...');
     var blob = await put('roteiros/' + roteiroId + '.html', html, {
       access: 'public',
@@ -142,65 +188,186 @@ async function processarRoteiro(d) {
       token: process.env.BLOB_READ_WRITE_TOKEN
     });
     console.log('Salvo no Blob:', blob.url);
-
-    // 4. Enviar email
-    console.log('Enviando email para:', d.email);
-    var nomeFirst = d.nome ? d.nome.split(' ')[0] : 'Viajante';
-    try {
-      var emailRes = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + process.env.RESEND_API_KEY,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: 'Grupo Dicas <onboarding@resend.dev>',
-          to: [d.email],
-          subject: '\uD83C\uDF89 Seu roteiro personalizado est\u00E1 pronto!',
-          html: '<div style="font-family:Poppins,sans-serif;max-width:600px;margin:0 auto;padding:40px 20px;">'
-            + '<div style="text-align:center;margin-bottom:30px;">'
-            + '<h1 style="color:#00BCD4;font-size:28px;">GRUPO<span style="color:#E91E8C;">DICAS</span></h1>'
-            + '</div>'
-            + '<h2 style="color:#1A1A2E;">Ol\u00E1, ' + nomeFirst + '! \uD83C\uDF89</h2>'
-            + '<p style="color:#6B7280;font-size:16px;line-height:1.6;">O seu roteiro personalizado est\u00E1 pronto! Clique no bot\u00E3o abaixo para visualiz\u00E1-lo:</p>'
-            + '<div style="text-align:center;margin:30px 0;">'
-            + '<a href="https://grupo-dicas-roteiro.vercel.app/api/roteiro?id=' + roteiroId + '" style="background:#00BCD4;color:#ffffff;padding:16px 32px;border-radius:12px;text-decoration:none;font-weight:600;font-size:16px;display:inline-block;">\uD83D\uDDFA\uFE0F Ver meu Roteiro</a>'
-            + '</div>'
-            + '<p style="color:#6B7280;font-size:14px;">Esse ser\u00E1 o link para voc\u00EA sempre acess\u00E1-lo, ent\u00E3o j\u00E1 salve ele e compartilhe com quem for viajar com voc\u00EAs. :)</p>'
-            + '<p style="color:#6B7280;font-size:14px;">Boa viagem! \u2708\uFE0F</p>'
-            + '<p style="color:#6B7280;font-size:14px;">Equipe Grupo Dicas</p>'
-            + '<hr style="border:none;border-top:1px solid #E5E7EB;margin:30px 0;"/>'
-            + '<p style="color:#9CA3AF;font-size:12px;text-align:center;">www.grupodicas.com</p>'
-            + '</div>'
-        })
-      });
-      var emailData = await emailRes.json();
-      console.log('Email status:', emailRes.status, JSON.stringify(emailData).substring(0, 200));
-    } catch (e) {
-      console.error('Erro ao enviar email:', e.message);
-    }
-
-    // 5. Atualizar Airtable
-    if (recordId) {
-      await atualizarAirtable(recordId, 'Enviado');
-    }
-
-    console.log('=== ROTEIRO COMPLETO! ID:', roteiroId, '- Tempo total:', elapsed, 'segundos ===');
-
-  } catch (err) {
-    console.error('Erro na geracao:', err.message);
-    console.error('Stack:', err.stack);
-    if (recordId) {
-      await atualizarAirtable(recordId, 'Erro');
-    }
+  } catch (e) {
+    console.error('Erro ao salvar no Blob:', e.message);
+    if (recordId) await atualizarAirtable(recordId, 'Erro');
+    return;
   }
+
+  // 4. Enviar email
+  console.log('Enviando email para:', d.email);
+  var nomeFirst = d.nome ? d.nome.split(' ')[0] : 'Viajante';
+  try {
+    var emailRes = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + process.env.RESEND_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: 'Grupo Dicas <onboarding@resend.dev>',
+        to: [d.email],
+        subject: '\uD83C\uDF89 Seu roteiro personalizado est\u00E1 pronto!',
+        html: '<div style="font-family:Poppins,sans-serif;max-width:600px;margin:0 auto;padding:40px 20px;">'
+          + '<div style="text-align:center;margin-bottom:30px;">'
+          + '<h1 style="color:#00BCD4;font-size:28px;">GRUPO<span style="color:#E91E8C;">DICAS</span></h1>'
+          + '</div>'
+          + '<h2 style="color:#1A1A2E;">Ol\u00E1, ' + nomeFirst + '! \uD83C\uDF89</h2>'
+          + '<p style="color:#6B7280;font-size:16px;line-height:1.6;">O seu roteiro personalizado est\u00E1 pronto! Clique no bot\u00E3o abaixo para visualiz\u00E1-lo:</p>'
+          + '<div style="text-align:center;margin:30px 0;">'
+          + '<a href="https://grupo-dicas-roteiro.vercel.app/api/roteiro?id=' + roteiroId + '" style="background:#00BCD4;color:#ffffff;padding:16px 32px;border-radius:12px;text-decoration:none;font-weight:600;font-size:16px;display:inline-block;">\uD83D\uDDFA\uFE0F Ver meu Roteiro</a>'
+          + '</div>'
+          + '<p style="color:#6B7280;font-size:14px;">Esse ser\u00E1 o link para voc\u00EA sempre acess\u00E1-lo, ent\u00E3o j\u00E1 salve ele e compartilhe com quem for viajar com voc\u00EAs. :)</p>'
+          + '<p style="color:#6B7280;font-size:14px;">Boa viagem! \u2708\uFE0F</p>'
+          + '<p style="color:#6B7280;font-size:14px;">Equipe Grupo Dicas</p>'
+          + '<hr style="border:none;border-top:1px solid #E5E7EB;margin:30px 0;"/>'
+          + '<p style="color:#9CA3AF;font-size:12px;text-align:center;">www.grupodicas.com</p>'
+          + '</div>'
+      })
+    });
+    var emailData = await emailRes.json();
+    console.log('Email status:', emailRes.status, JSON.stringify(emailData).substring(0, 200));
+  } catch (e) {
+    console.error('Erro ao enviar email:', e.message);
+  }
+
+  // 5. Atualizar Airtable
+  if (recordId) {
+    await atualizarAirtable(recordId, 'Enviado');
+  }
+
+  console.log('=== ROTEIRO COMPLETO! ID:', roteiroId, '===');
 }
 
-function buildPrompt(d) {
+// =============================================================
+// GERACAO VIA CLAUDE API COM STREAMING + PROMPT CACHING
+// =============================================================
+async function gerarHtmlComClaude(d) {
+  var startTime = Date.now();
+  var userPrompt = buildUserPrompt(d);
+
+  console.log('Chamando Claude Opus com streaming...');
+  console.log('API Key existe:', !!process.env.ANTHROPIC_API_KEY);
+
+  var claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: 'claude-opus-4-6',
+      max_tokens: 32000,
+      stream: true,
+      system: [
+        {
+          type: 'text',
+          text: SYSTEM_PROMPT,
+          cache_control: { type: 'ephemeral' }
+        }
+      ],
+      messages: [{ role: 'user', content: userPrompt }]
+    }),
+    // Timeout generoso no nivel do fetch (45 minutos)
+    timeout: 45 * 60 * 1000
+  });
+
+  console.log('Claude conectou, status:', claudeResponse.status);
+
+  if (!claudeResponse.ok) {
+    var errTxt = await claudeResponse.text();
+    throw new Error('Claude API erro ' + claudeResponse.status + ': ' + errTxt.substring(0, 500));
+  }
+
+  // Processar stream SSE
+  var html = '';
+  var totalTokensIn = 0;
+  var totalTokensOut = 0;
+  var cacheCreated = 0;
+  var cacheRead = 0;
+  var ultimoLog = Date.now();
+  var buffer = '';
+
+  return new Promise(function(resolve, reject) {
+    claudeResponse.body.on('data', function(chunk) {
+      buffer += chunk.toString('utf8');
+
+      // Processar eventos SSE linha por linha
+      var linhas = buffer.split('\n');
+      buffer = linhas.pop(); // manter ultima linha incompleta no buffer
+
+      for (var i = 0; i < linhas.length; i++) {
+        var linha = linhas[i].trim();
+        if (!linha || !linha.startsWith('data: ')) continue;
+
+        var jsonStr = linha.substring(6);
+        if (jsonStr === '[DONE]') continue;
+
+        try {
+          var evento = JSON.parse(jsonStr);
+
+          // Conteudo sendo gerado
+          if (evento.type === 'content_block_delta' && evento.delta && evento.delta.text) {
+            html += evento.delta.text;
+
+            // Log de progresso a cada 5 segundos
+            if (Date.now() - ultimoLog > 5000) {
+              var elapsed = Math.round((Date.now() - startTime) / 1000);
+              console.log('Streaming: ' + html.length + ' chars, ' + elapsed + 's decorridos');
+              ultimoLog = Date.now();
+            }
+          }
+
+          // Info de tokens (no inicio e no fim)
+          if (evento.type === 'message_start' && evento.message && evento.message.usage) {
+            totalTokensIn = evento.message.usage.input_tokens || 0;
+            cacheCreated = evento.message.usage.cache_creation_input_tokens || 0;
+            cacheRead = evento.message.usage.cache_read_input_tokens || 0;
+          }
+          if (evento.type === 'message_delta' && evento.usage) {
+            totalTokensOut = evento.usage.output_tokens || 0;
+          }
+
+          // Erro no stream
+          if (evento.type === 'error') {
+            return reject(new Error('Stream error: ' + JSON.stringify(evento.error)));
+          }
+        } catch (parseErr) {
+          // Ignorar linhas que nao sao JSON valido (eventos ping, etc)
+        }
+      }
+    });
+
+    claudeResponse.body.on('end', function() {
+      var elapsed = Math.round((Date.now() - startTime) / 1000);
+      console.log('=== Stream finalizado em ' + elapsed + 's ===');
+      console.log('Tokens input:', totalTokensIn, '| output:', totalTokensOut);
+      console.log('Cache criado:', cacheCreated, '| Cache lido:', cacheRead);
+
+      if (!html || html.length < 1000) {
+        return reject(new Error('HTML gerado muito curto ou vazio: ' + html.length + ' chars'));
+      }
+
+      // Limpar possiveis backticks
+      html = html.replace(/^```html\s*/i, '').replace(/```\s*$/i, '').trim();
+      resolve(html);
+    });
+
+    claudeResponse.body.on('error', function(err) {
+      reject(new Error('Stream connection error: ' + err.message));
+    });
+  });
+}
+
+// =============================================================
+// USER PROMPT - DADOS VARIAVEIS DO USUARIO
+// Edite aqui APENAS se adicionar/remover campos no formulario
+// =============================================================
+function buildUserPrompt(d) {
   return [
-    'Voce e um especialista em viagens do Grupo Dicas (grupodicas.com), o maior site de dicas de viagem do Brasil. Sua missao e criar roteiros de viagem personalizados, detalhados e com foco em ajudar brasileiros a economizar.',
+    'Gere um roteiro personalizado com os seguintes dados:',
     '',
-    'DADOS DO USUARIO PARA ESTE ROTEIRO',
     '- Nome: ' + d.nome,
     '- Destino: ' + d.destino,
     '- Data de ida: ' + d.dataChegada,
@@ -213,62 +380,7 @@ function buildPrompt(d) {
     '- Interesses: ' + d.interesses,
     '- Primeira vez no destino: ' + d.primeiraVez,
     '',
-    'FORMATO DE SAIDA',
-    'Gere APENAS codigo HTML completo. NAO inclua explicacoes, markdown ou backticks. O HTML deve comecar com <!DOCTYPE html>.',
-    'Use fonte Poppins do Google Fonts.',
-    'Use estas variaveis CSS: --primary: #00BCD4; --primary-dark: #0097A7; --primary-light: #E0F7FA; --magenta: #E91E8C; --text: #1A1A2E; --text-light: #6B7280; --white: #FFFFFF; --gray: #F3F4F6; --success: #10B981; --warning: #F59E0B; --danger: #EF4444;',
-    'Design responsivo, moderno e profissional. Pronto para visualizar no navegador.',
-    '',
-    'ESTRUTURA OBRIGATORIA DO ROTEIRO - TODAS AS 9 SECOES DEVEM ESTAR PRESENTES',
-    '',
-    '1. CAPA',
-    '- Fundo com linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%)',
-    '- Logo com icone de aviao em box com background rgba(255,255,255,0.2) border-radius 12px',
-    '- Texto do logo: GRUPO em branco, DICAS em rgba(255,255,255,0.8), font-size 24px font-weight 700',
-    '- Badge "Roteiro Personalizado" com background rgba(255,255,255,0.2), border-radius 50px, uppercase, letter-spacing 2px',
-    '- Titulo com paises em font-size 48px font-weight 800',
-    '- Subtitulo com cidades separadas por bullet, font-size 20px opacity 0.9',
-    '- 3 info cards com icones: datas da viagem, numero de pessoas e tipo, estilo de viagem',
-    '- Cada info card: icone em box 40x40 rgba(255,255,255,0.2) border-radius 10px + texto',
-    '- Rodape com fundo rgba(0,0,0,0.1): "Preparado especialmente para [Nome]" em font-size 18px bold',
-    '',
-    '2. RESUMO DA VIAGEM',
-    '- Titulo da secao com icone em box 50x50 gradiente primary, border-radius 12px + texto font-size 28px font-weight 700',
-    '- Grid 2x2 com cards de fundo var(--gray) border-radius 16px padding 20px',
-    '- Box de destinos com fundo primary-light, border 2px solid primary, border-radius 16px',
-    '- OBRIGATORIO: Box de clima com temperatura esperada para CADA cidade no periodo da viagem',
-    '',
-    '3. ONDE FICAR (HOSPEDAGEM)',
-    '- Texto introdutorio sobre hoteis que a equipe ja ficou e indica',
-    '- Box verde de economia sobre cancelamento gratuito',
-    '- Para CADA cidade: 2 hoteis com nota Booking 8.0+, avaliacoes 700+, distancias, link afiliado',
-    '- Box azul sobre por que reservar pelo Booking',
-    '',
-    '4. ANTES DE VIAJAR (CHECKLIST)',
-    '- Documentacao, Reservas, Financeiro, Itens para Levar',
-    '- Se Europa: SEGURO VIAGEM OBRIGATORIO',
-    '',
-    '5. ROTEIRO DIA A DIA',
-    'Para CADA dia: header com gradiente, 4-6 atividades com horario, emoji, descricao, preco em R$, dicas, links Civitatis, resumo do dia',
-    '',
-    '6. TRANSPORTE ENTRE CIDADES',
-    'Box amarelo com 3 opcoes, precos e recomendacao',
-    '',
-    '7. DICAS PARA ECONOMIZAR - 6 cards praticos',
-    '',
-    '8. BOXES DOS PARCEIROS - TODOS OBRIGATORIOS:',
-    'a) Seguro Viagem (verde) - Link: https://www.seguroviagem.srv.br/?ag=215&lead_tag=App_[Pais]&promo=18exclusivogrupodicas - NUNCA citar "Seguros Promo"',
-    'b) Chip (roxo) - Link: https://americachip.com/?oid=12&affid=103&sub1=App - NUNCA citar "America Chip"',
-    'c) Conta Global (vermelho) - Cupom GABRIELLORENZI20 - Link: https://nomad.onelink.me/wIQT/gabriellorenzi15 - NUNCA citar "Nomad"',
-    'd) Carros (azul) - Link: https://www.rentcars.com/pt-br/?campaign=App&content=[Pais]&requestorid=42&source=Carro - NUNCA citar "RentCars"',
-    '',
-    '9. CONTRACAPA - Fundo escuro, logo, tagline, site, nome viajante',
-    '',
-    'LINKS: CIVITATIS https://www.civitatis.com/pt/[cidade]/[passeio]/?aid=3472&cmp=App_[Pais] | BOOKING https://www.booking.com/hotel/[codigo-pais]/[nome-hotel].pt-br.html?aid=390200&label=App_[Pais] | RAIL EUROPE (fixo) https://click.linksynergy.com/deeplink?id=czqBaUUVmPg&mid=42638&murl=https%3A%2F%2Fwww.raileurope.com%2F%3Fcountry%3DBR%26locale%3Dpt%26currency%3DEUR&u1=App',
-    '',
-    'TOM: Amigavel, como amigo que ja foi. Precos em R$. Vendedor sutil.',
-    '',
-    'Retorne APENAS o HTML completo, comecando com <!DOCTYPE html>.'
+    'Siga rigorosamente TODAS as regras e as 9 secoes obrigatorias. Retorne APENAS o HTML completo.'
   ].join('\n');
 }
 
