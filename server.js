@@ -338,6 +338,11 @@ async function processarRoteiro(d) {
     return;
   }
 
+  // 4. Atualizar Airtable para Gerado
+  if (recordId) {
+    await atualizarAirtable(recordId, 'Gerado');
+  }
+
   // 4. Aguardar antes de enviar email (para parecer que alguem preparou manualmente)
   var DELAY_ENVIO_MS = 2 * 60 * 60 * 1000; // 2 horas em milissegundos
   var tempoGeracaoMs = Date.now() - startTime;
