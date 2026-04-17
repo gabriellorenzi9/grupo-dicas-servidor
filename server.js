@@ -274,6 +274,7 @@ async function processarRoteiro(d) {
               Viajantes: d.viajantes || '',
               Orcamento: d.orcamento || '',
               Interesses: d.interesses || '',
+              Celular: d.celular || '',
               Status: 'Gerando'
             }
           }]
@@ -387,7 +388,47 @@ async function processarRoteiro(d) {
     console.error('Erro ao enviar email:', e.message);
   }
 
-  // 6. Atualizar Airtable
+  // 6. Enviar SMS via Twilio (se celular foi informado)
+  if (d.celular && process.env.TWILIO_ACCOUNT_SID) {
+    console.log('Enviando SMS para:', d.celular);
+    var nomeFirstSms = d.nome ? d.nome.split(' ')[0] : 'Viajante';
+    var destinoSms = d.destino ? d.destino.substring(0, 60) : 'sua viagem';
+    var smsBody = 'Ola, ' + nomeFirstSms + '! Seu roteiro de ' + destinoSms + ' ficou pronto! Confira no seu email (' + d.email + '). Se nao encontrar, verifique a pasta de spam. Boa viagem! - Equipe Grupo Dicas';
+
+    // Formatar numero para formato internacional (+55...)
+    var celularFormatado = d.celular.replace(/\D/g, '');
+    if (celularFormatado.length === 11) {
+      celularFormatado = '+55' + celularFormatado;
+    } else if (celularFormatado.length === 13 && celularFormatado.startsWith('55')) {
+      celularFormatado = '+' + celularFormatado;
+    } else if (!celularFormatado.startsWith('+')) {
+      celularFormatado = '+' + celularFormatado;
+    }
+
+    try {
+      var twilioAuth = Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64');
+      var smsRes = await fetch(
+        'https://api.twilio.com/2010-04-01/Accounts/' + process.env.TWILIO_ACCOUNT_SID + '/Messages.json',
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Basic ' + twilioAuth,
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: 'To=' + encodeURIComponent(celularFormatado) + '&From=' + encodeURIComponent(process.env.TWILIO_PHONE_NUMBER) + '&Body=' + encodeURIComponent(smsBody)
+        }
+      );
+      var smsData = await smsRes.json();
+      console.log('SMS status:', smsRes.status, 'SID:', smsData.sid || 'erro');
+      if (smsData.error_code) {
+        console.error('SMS erro:', smsData.error_message);
+      }
+    } catch (smsErr) {
+      console.error('Erro ao enviar SMS:', smsErr.message);
+    }
+  }
+
+  // 7. Atualizar Airtable
   if (recordId) {
     await atualizarAirtable(recordId, 'Enviado');
   }
