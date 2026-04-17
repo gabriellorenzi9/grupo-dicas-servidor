@@ -345,7 +345,7 @@ async function processarRoteiro(d) {
   }
 
   // 4. Aguardar antes de enviar email (para parecer que alguem preparou manualmente)
-  var DELAY_ENVIO_MS = 2 * 60 * 60 * 1000; // 2 horas em milissegundos
+  var DELAY_ENVIO_MS = 2 * 60 * 1000; // 2 minutos (temporario pra teste)
   var tempoGeracaoMs = Date.now() - startTime;
   var tempoEspera = Math.max(0, DELAY_ENVIO_MS - tempoGeracaoMs);
   console.log('Roteiro pronto! Aguardando ' + Math.round(tempoEspera / 60000) + ' minutos antes de enviar email...');
