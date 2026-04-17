@@ -345,7 +345,7 @@ async function processarRoteiro(d) {
   }
 
   // 4. Aguardar antes de enviar email (para parecer que alguem preparou manualmente)
-  var DELAY_ENVIO_MS = 2 * 60 * 1000; // 2 minutos (temporario para teste)
+  var DELAY_ENVIO_MS = 2 * 60 * 60 * 1000; // 2 horas em milissegundos
   var tempoGeracaoMs = Date.now() - startTime;
   var tempoEspera = Math.max(0, DELAY_ENVIO_MS - tempoGeracaoMs);
   console.log('Roteiro pronto! Aguardando ' + Math.round(tempoEspera / 60000) + ' minutos antes de enviar email...');
@@ -392,8 +392,7 @@ async function processarRoteiro(d) {
   if (d.celular && process.env.TWILIO_ACCOUNT_SID) {
     console.log('Enviando SMS para:', d.celular);
     var nomeFirstSms = d.nome ? d.nome.split(' ')[0] : 'Viajante';
-    var destinoSms = d.destino ? d.destino.substring(0, 60) : 'sua viagem';
-    var smsBody = 'Ola, ' + nomeFirstSms + '! Seu roteiro de ' + destinoSms + ' ficou pronto! Confira no seu email (' + d.email + '). Se nao encontrar, verifique a pasta de spam. Boa viagem! - Equipe Grupo Dicas';
+    var smsBody = 'Olá, ' + nomeFirstSms + '! Seu roteiro de viagem personalizado ficou pronto! Confira no seu email (' + d.email + '). Se não encontrar, verifique a pasta de spam. Boa viagem! - Equipe Grupo Dicas';
 
     // Formatar numero para formato internacional (+55...)
     var celularFormatado = d.celular.replace(/\D/g, '');
