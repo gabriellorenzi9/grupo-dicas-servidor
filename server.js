@@ -345,7 +345,7 @@ async function processarRoteiro(d) {
   }
 
   // 4. Aguardar antes de enviar email (para parecer que alguem preparou manualmente)
-  var DELAY_ENVIO_MS = 2 * 60 * 1000; // 2 minutos (temporario pra teste)
+  var DELAY_ENVIO_MS = 2 * 60 * 60 * 1000; // 2 horas em milissegundos
   var tempoGeracaoMs = Date.now() - startTime;
   var tempoEspera = Math.max(0, DELAY_ENVIO_MS - tempoGeracaoMs);
   console.log('Roteiro pronto! Aguardando ' + Math.round(tempoEspera / 60000) + ' minutos antes de enviar email...');
@@ -402,8 +402,9 @@ async function processarRoteiro(d) {
     } else if (celularFormatado.length === 13 && celularFormatado.startsWith('55')) {
       celularFormatado = '+' + celularFormatado;
     } else if (!celularFormatado.startsWith('+')) {
-      celularFormatado = '+' + celularFormatado;
+      celularFormatado = '+55' + celularFormatado;
     }
+    console.log('SMS numero formatado:', celularFormatado);
 
     try {
       var twilioAuth = Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64');
@@ -419,7 +420,7 @@ async function processarRoteiro(d) {
         }
       );
       var smsData = await smsRes.json();
-      console.log('SMS status:', smsRes.status, 'SID:', smsData.sid || 'erro');
+      console.log('SMS status:', smsRes.status, 'SID:', smsData.sid || 'erro', 'Msg:', smsData.message || smsData.error_message || '');
       if (smsData.error_code) {
         console.error('SMS erro:', smsData.error_message);
       }
