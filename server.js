@@ -759,15 +759,17 @@ async function enviarEmailESms(reg) {
 }
 
 // =============================================================
-// GERACAO VIA CLAUDE API COM STREAMING + PROMPT CACHING
+// GERACAO VIA CLAUDE BATCH API (50% desconto) + PROMPT CACHING
 // =============================================================
 async function gerarHtmlComClaude(d) {
   var startTime = Date.now();
   var userPrompt = buildUserPrompt(d);
+  var customId = 'roteiro_' + Date.now();
 
-  console.log('Chamando Claude Opus com streaming...');
+  console.log('Enviando para Batch API (50% desconto)...');
 
-  var claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
+  // 1. Criar batch
+  var batchResponse = await fetch('https://api.anthropic.com/v1/messages/batches', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -775,85 +777,115 @@ async function gerarHtmlComClaude(d) {
       'anthropic-version': '2023-06-01'
     },
     body: JSON.stringify({
-      model: 'claude-opus-4-6',
-      max_tokens: 64000,
-      stream: true,
-      system: [
-        {
-          type: 'text',
-          text: SYSTEM_PROMPT,
-          cache_control: { type: 'ephemeral' }
+      requests: [{
+        custom_id: customId,
+        params: {
+          model: 'claude-opus-4-6',
+          max_tokens: 64000,
+          system: [
+            {
+              type: 'text',
+              text: SYSTEM_PROMPT,
+              cache_control: { type: 'ephemeral' }
+            }
+          ],
+          messages: [{ role: 'user', content: userPrompt }]
         }
-      ],
-      messages: [{ role: 'user', content: userPrompt }]
-    }),
-    timeout: 45 * 60 * 1000
+      }]
+    })
   });
 
-  if (!claudeResponse.ok) {
-    var errTxt = await claudeResponse.text();
-    throw new Error('Claude API erro ' + claudeResponse.status + ': ' + errTxt.substring(0, 500));
+  if (!batchResponse.ok) {
+    var errTxt = await batchResponse.text();
+    throw new Error('Batch API erro ' + batchResponse.status + ': ' + errTxt.substring(0, 500));
   }
 
-  var html = '';
-  var totalTokensIn = 0;
-  var totalTokensOut = 0;
-  var cacheCreated = 0;
-  var cacheRead = 0;
-  var ultimoLog = Date.now();
-  var buffer = '';
+  var batchData = await batchResponse.json();
+  var batchId = batchData.id;
+  console.log('Batch criado:', batchId);
 
-  return new Promise(function(resolve, reject) {
-    claudeResponse.body.on('data', function(chunk) {
-      buffer += chunk.toString('utf8');
-      var linhas = buffer.split('\n');
-      buffer = linhas.pop();
+  // 2. Polling ate completar (checar a cada 60s, max 4 horas)
+  var maxWait = 4 * 60 * 60 * 1000; // 4 horas
+  var pollInterval = 60 * 1000; // 60 segundos
+  var elapsed = 0;
 
-      for (var i = 0; i < linhas.length; i++) {
-        var linha = linhas[i].trim();
-        if (!linha || !linha.startsWith('data: ')) continue;
-        var jsonStr = linha.substring(6);
-        if (jsonStr === '[DONE]') continue;
+  while (elapsed < maxWait) {
+    await new Promise(function(resolve) { setTimeout(resolve, pollInterval); });
+    elapsed += pollInterval;
 
+    var statusRes = await fetch('https://api.anthropic.com/v1/messages/batches/' + batchId, {
+      headers: {
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      }
+    });
+    var statusData = await statusRes.json();
+    var mins = Math.round(elapsed / 60000);
+
+    if (statusData.processing_status === 'ended') {
+      console.log('Batch completado em ' + mins + ' minutos');
+
+      // 3. Buscar resultados
+      var resultsRes = await fetch(statusData.results_url, {
+        headers: {
+          'x-api-key': process.env.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01'
+        }
+      });
+      var resultsText = await resultsRes.text();
+
+      // Resultados em JSONL (uma linha por request)
+      var lines = resultsText.trim().split('\n');
+      for (var i = 0; i < lines.length; i++) {
         try {
-          var evento = JSON.parse(jsonStr);
-          if (evento.type === 'content_block_delta' && evento.delta && evento.delta.text) {
-            html += evento.delta.text;
-            if (Date.now() - ultimoLog > 5000) {
-              console.log('Streaming: ' + html.length + ' chars, ' + Math.round((Date.now() - startTime) / 1000) + 's');
-              ultimoLog = Date.now();
+          var result = JSON.parse(lines[i]);
+          if (result.custom_id === customId && result.result && result.result.type === 'succeeded') {
+            var msg = result.result.message;
+            var html = '';
+
+            // Extrair texto da resposta
+            if (msg && msg.content) {
+              for (var j = 0; j < msg.content.length; j++) {
+                if (msg.content[j].type === 'text') {
+                  html += msg.content[j].text;
+                }
+              }
             }
-          }
-          if (evento.type === 'message_start' && evento.message && evento.message.usage) {
-            totalTokensIn = evento.message.usage.input_tokens || 0;
-            cacheCreated = evento.message.usage.cache_creation_input_tokens || 0;
-            cacheRead = evento.message.usage.cache_read_input_tokens || 0;
-          }
-          if (evento.type === 'message_delta' && evento.usage) {
-            totalTokensOut = evento.usage.output_tokens || 0;
-          }
-          if (evento.type === 'error') {
-            return reject(new Error('Stream error: ' + JSON.stringify(evento.error)));
-          }
-        } catch (parseErr) {}
-      }
-    });
 
-    claudeResponse.body.on('end', function() {
-      console.log('=== Stream finalizado em ' + Math.round((Date.now() - startTime) / 1000) + 's ===');
-      console.log('Tokens input:', totalTokensIn, '| output:', totalTokensOut);
-      console.log('Cache criado:', cacheCreated, '| Cache lido:', cacheRead);
-      if (!html || html.length < 1000) {
-        return reject(new Error('HTML muito curto: ' + html.length + ' chars'));
-      }
-      html = html.replace(/^```html\s*/i, '').replace(/```\s*$/i, '').trim();
-      resolve(html);
-    });
+            // Log de tokens
+            var tokensIn = msg.usage ? msg.usage.input_tokens : 0;
+            var tokensOut = msg.usage ? msg.usage.output_tokens : 0;
+            var cacheCreated = msg.usage ? (msg.usage.cache_creation_input_tokens || 0) : 0;
+            var cacheRead = msg.usage ? (msg.usage.cache_read_input_tokens || 0) : 0;
 
-    claudeResponse.body.on('error', function(err) {
-      reject(new Error('Stream connection error: ' + err.message));
-    });
-  });
+            console.log('=== Batch finalizado em ' + Math.round((Date.now() - startTime) / 1000) + 's ===');
+            console.log('Tokens input:', tokensIn, '| output:', tokensOut);
+            console.log('Cache criado:', cacheCreated, '| Cache lido:', cacheRead);
+
+            if (!html || html.length < 1000) {
+              throw new Error('HTML muito curto: ' + html.length + ' chars');
+            }
+
+            html = html.replace(/^```html\s*/i, '').replace(/```\s*$/i, '').trim();
+            return html;
+          }
+
+          // Checar se deu erro
+          if (result.custom_id === customId && result.result && result.result.type === 'errored') {
+            throw new Error('Batch request erro: ' + JSON.stringify(result.result.error).substring(0, 300));
+          }
+        } catch (parseErr) {
+          if (parseErr.message && parseErr.message.includes('Batch')) throw parseErr;
+          if (parseErr.message && parseErr.message.includes('HTML muito curto')) throw parseErr;
+        }
+      }
+      throw new Error('Resultado nao encontrado no batch para custom_id: ' + customId);
+    }
+
+    console.log('Batch ' + batchId + ' ainda processando... (' + mins + 'min)');
+  }
+
+  throw new Error('Batch timeout apos 4 horas - batchId: ' + batchId);
 }
 
 // =============================================================
