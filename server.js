@@ -712,44 +712,31 @@ async function enviarEmailESms(reg) {
     console.error('Erro ao enviar email:', e.message);
   }
 
-  // 2. Enviar SMS via Twilio (se celular foi informado)
-  if (f.Celular && process.env.TWILIO_ACCOUNT_SID) {
-    console.log('Enviando SMS para:', f.Celular);
+  // 2. Enviar SMS via SMSDev (se celular foi informado)
+  if (f.Celular && process.env.SMSDEV_API_KEY) {
+    console.log('Enviando SMS via SMSDev para:', f.Celular);
     var emailMascarado = mascararEmail(f.Email);
-    var smsBody = 'Olá, ' + nomeFirst + '! Seu roteiro de viagem personalizado ficou pronto! Confira no email enviado para ' + emailMascarado + '. Se não encontrar, verifique as pastas de spam e promoções. Mova para a caixa de entrada para não perder o acesso! Boa viagem! - Equipe Grupo Dicas';
+    var smsBody = 'Ola, ' + nomeFirst + '! Seu roteiro de viagem personalizado ficou pronto! Confira no email enviado para ' + emailMascarado + '. Se nao encontrar, verifique as pastas de spam e promocoes. Mova para a caixa de entrada para nao perder o acesso! Boa viagem! - Equipe Grupo Dicas';
 
-    // O numero ja vem formatado com codigo do pais do intl-tel-input (ex: +5511999999999)
-    var celularFormatado = f.Celular.replace(/\s/g, '');
-    if (!celularFormatado.startsWith('+')) {
-      // Fallback: se nao veio com +, tentar adicionar +55
-      var nums = celularFormatado.replace(/\D/g, '');
-      if (nums.length === 11) {
-        celularFormatado = '+55' + nums;
-      } else if (nums.length === 13 && nums.startsWith('55')) {
-        celularFormatado = '+' + nums;
-      } else {
-        celularFormatado = '+' + nums;
-      }
+    // Extrair apenas DDD + numero (11 digitos) para SMSDev
+    var nums = f.Celular.replace(/\D/g, '');
+    // Se veio com +55, remover o 55 do inicio
+    if (nums.startsWith('55') && nums.length >= 12) {
+      nums = nums.substring(2);
     }
-    console.log('SMS numero formatado:', celularFormatado);
-
-    try {
-      var twilioAuth = Buffer.from(process.env.TWILIO_ACCOUNT_SID + ':' + process.env.TWILIO_AUTH_TOKEN).toString('base64');
-      var smsRes = await fetch(
-        'https://api.twilio.com/2010-04-01/Accounts/' + process.env.TWILIO_ACCOUNT_SID + '/Messages.json',
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': 'Basic ' + twilioAuth,
-            'Content-Type': 'application/x-www-form-urlencoded'
-          },
-          body: 'To=' + encodeURIComponent(celularFormatado) + '&From=' + encodeURIComponent(process.env.TWILIO_PHONE_NUMBER) + '&Body=' + encodeURIComponent(smsBody)
-        }
-      );
-      var smsData = await smsRes.json();
-      console.log('SMS status:', smsRes.status, 'SID:', smsData.sid || 'erro', 'Msg:', smsData.message || smsData.error_message || '');
-    } catch (smsErr) {
-      console.error('Erro ao enviar SMS:', smsErr.message);
+    // Se ainda nao tem 11 digitos (DDD + 9 digitos), pode ser internacional - nao enviar
+    if (nums.length !== 11) {
+      console.log('SMS: numero nao brasileiro ou formato invalido (' + nums.length + ' digitos), pulando envio');
+    } else {
+      console.log('SMS numero formatado:', nums);
+      try {
+        var smsUrl = 'https://api.smsdev.com.br/v1/send?key=' + process.env.SMSDEV_API_KEY + '&type=9&number=' + nums + '&msg=' + encodeURIComponent(smsBody);
+        var smsRes = await fetch(smsUrl);
+        var smsData = await smsRes.json();
+        console.log('SMS SMSDev resposta:', JSON.stringify(smsData).substring(0, 200));
+      } catch (smsErr) {
+        console.error('Erro ao enviar SMS:', smsErr.message);
+      }
     }
   }
 
