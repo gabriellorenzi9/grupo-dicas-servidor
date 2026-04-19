@@ -681,29 +681,128 @@ async function processarRoteiro(d) {
 // =============================================================
 async function verificarFilaDeEnvio() {
   try {
-    // Buscar roteiros com Status = Gerado
+    // 1. Buscar roteiros com Status = Gerado (prontos pra enviar)
     var url = 'https://api.airtable.com/v0/' + process.env.AIRTABLE_BASE_ID + '/Pedidos?filterByFormula=' + encodeURIComponent("{Status}='Gerado'") + '&maxRecords=10';
     var res = await fetch(url, {
       headers: { 'Authorization': 'Bearer ' + process.env.AIRTABLE_TOKEN }
     });
     var data = await res.json();
 
-    if (!data.records || data.records.length === 0) return;
+    if (data.records && data.records.length > 0) {
+      var agora = new Date();
+      for (var i = 0; i < data.records.length; i++) {
+        var reg = data.records[i];
+        var enviarEm = reg.fields.Enviar_Em ? new Date(reg.fields.Enviar_Em) : null;
 
-    var agora = new Date();
-    for (var i = 0; i < data.records.length; i++) {
-      var reg = data.records[i];
-      var enviarEm = reg.fields.Enviar_Em ? new Date(reg.fields.Enviar_Em) : null;
+        // Se Enviar_Em ja passou, enviar agora
+        if (enviarEm && agora >= enviarEm) {
+          console.log('=== Fila: Enviando roteiro para', reg.fields.Nome, '===');
+          await enviarEmailESms(reg);
+        }
+      }
+    }
 
-      // Se Enviar_Em ja passou, enviar agora
-      if (enviarEm && agora >= enviarEm) {
-        console.log('=== Fila: Enviando roteiro para', reg.fields.Nome, '===');
-        await enviarEmailESms(reg);
+    // 2. Verificar roteiros travados em "Gerando" ha mais de 3 horas
+    var urlGerando = 'https://api.airtable.com/v0/' + process.env.AIRTABLE_BASE_ID + '/Pedidos?filterByFormula=' + encodeURIComponent("{Status}='Gerando'") + '&maxRecords=10';
+    var resGerando = await fetch(urlGerando, {
+      headers: { 'Authorization': 'Bearer ' + process.env.AIRTABLE_TOKEN }
+    });
+    var dataGerando = await resGerando.json();
+
+    if (dataGerando.records && dataGerando.records.length > 0) {
+      var agora2 = new Date();
+      for (var j = 0; j < dataGerando.records.length; j++) {
+        var regG = dataGerando.records[j];
+        var criadoEm = regG.createdTime ? new Date(regG.createdTime) : null;
+        if (criadoEm) {
+          var horasDesde = (agora2 - criadoEm) / (1000 * 60 * 60);
+          if (horasDesde > 3) {
+            console.log('=== Roteiro travado detectado:', regG.fields.Nome, '- criado ha', Math.round(horasDesde), 'horas. Regenerando... ===');
+            // Reprocessar o roteiro
+            var dadosReprocessar = {
+              nome: regG.fields.Nome || '',
+              email: regG.fields.Email || '',
+              destino: regG.fields.Destino || '',
+              dataChegada: regG.fields.Data_Ida || '',
+              dataPartida: regG.fields.Data_Volta || '',
+              duracaoDias: regG.fields.Duracao_Dias || 0,
+              quantasPessoas: regG.fields.Pessoas || 0,
+              viajantes: regG.fields.Viajantes || '',
+              orcamento: regG.fields.Orcamento || '',
+              interesses: regG.fields.Interesses || '',
+              criancas: false,
+              primeiraVez: true,
+              celular: regG.fields.Celular || ''
+            };
+            // Atualizar status pra Gerando (reset do timer)
+            await atualizarAirtable(regG.id, { Status: 'Gerando' });
+            // Reprocessar em background
+            reprocessarRoteiro(regG.id, dadosReprocessar).catch(function(err) {
+              console.error('Erro ao reprocessar roteiro travado:', err.message);
+            });
+          }
+        }
       }
     }
   } catch (e) {
     console.error('Erro na fila de envio:', e.message);
   }
+}
+
+// Reprocessar roteiro travado (usa recordId existente)
+async function reprocessarRoteiro(recordId, d) {
+  var roteiroId = recordId;
+
+  // Gerar HTML via Claude (com retry)
+  var html = null;
+  var maxTentativas = 2;
+  var tentativa = 0;
+
+  while (tentativa < maxTentativas && !html) {
+    tentativa++;
+    console.log('=== Reprocessamento tentativa ' + tentativa + '/' + maxTentativas + ' para:', d.nome);
+    try {
+      html = await gerarHtmlComClaude(d);
+      console.log('Reprocessamento OK na tentativa', tentativa, '-', html.length, 'caracteres');
+    } catch (err) {
+      console.error('Reprocessamento tentativa ' + tentativa + ' falhou:', err.message);
+      if (tentativa < maxTentativas) {
+        await new Promise(function(resolve) { setTimeout(resolve, 10000); });
+      }
+    }
+  }
+
+  if (!html) {
+    console.error('REPROCESSAMENTO FALHOU para:', d.nome);
+    await atualizarAirtable(recordId, { Status: 'Erro' });
+    return;
+  }
+
+  // Salvar no Blob
+  try {
+    var blob = await put('roteiros/' + roteiroId + '.html', html, {
+      access: 'public',
+      contentType: 'text/html; charset=utf-8',
+      addRandomSuffix: false,
+      token: process.env.BLOB_READ_WRITE_TOKEN
+    });
+    console.log('Reprocessamento salvo no Blob:', blob.url);
+  } catch (e) {
+    console.error('Erro ao salvar no Blob (reprocessamento):', e.message);
+    await atualizarAirtable(recordId, { Status: 'Erro' });
+    return;
+  }
+
+  // Atualizar Airtable
+  var DELAY_HORAS = 2;
+  var enviarEm = new Date(Date.now() + DELAY_HORAS * 60 * 60 * 1000).toISOString();
+  await atualizarAirtable(recordId, {
+    Status: 'Gerado',
+    Enviar_Em: enviarEm,
+    Roteiro_ID: roteiroId
+  });
+
+  console.log('=== REPROCESSAMENTO COMPLETO para:', d.nome, '===');
 }
 
 // Rodar a fila a cada 5 minutos
@@ -768,6 +867,7 @@ async function enviarEmailESms(reg) {
   }
 
   // 2. Enviar SMS via SMSDev (se celular foi informado)
+  var smsEnviado = 'Não';
   if (f.Celular && process.env.SMSDEV_API_KEY) {
     console.log('Enviando SMS via SMSDev para:', f.Celular);
     var emailMascarado = mascararEmail(f.Email);
@@ -782,6 +882,7 @@ async function enviarEmailESms(reg) {
     // Se ainda nao tem 11 digitos (DDD + 9 digitos), pode ser internacional - nao enviar
     if (nums.length !== 11) {
       console.log('SMS: numero nao brasileiro ou formato invalido (' + nums.length + ' digitos), pulando envio');
+      smsEnviado = 'Não (internacional)';
     } else {
       console.log('SMS numero formatado:', nums);
       try {
@@ -789,15 +890,23 @@ async function enviarEmailESms(reg) {
         var smsRes = await fetch(smsUrl);
         var smsData = await smsRes.json();
         console.log('SMS SMSDev resposta:', JSON.stringify(smsData).substring(0, 200));
+        if (smsData.situacao === 'OK') {
+          smsEnviado = 'Sim';
+        } else {
+          smsEnviado = 'Erro: ' + (smsData.descricao || smsData.situacao || 'desconhecido');
+        }
       } catch (smsErr) {
         console.error('Erro ao enviar SMS:', smsErr.message);
+        smsEnviado = 'Erro: ' + smsErr.message;
       }
     }
+  } else if (!f.Celular || !f.Celular.trim()) {
+    smsEnviado = 'Sem celular';
   }
 
-  // 3. Atualizar Airtable para Enviado
-  await atualizarAirtable(recordId, { Status: 'Enviado' });
-  console.log('=== ROTEIRO ENVIADO! ID:', roteiroId, '===');
+  // 3. Atualizar Airtable para Enviado + status SMS
+  await atualizarAirtable(recordId, { Status: 'Enviado', SMS_Enviado: smsEnviado });
+  console.log('=== ROTEIRO ENVIADO! ID:', roteiroId, '| SMS:', smsEnviado, '===');
 }
 
 // =============================================================
