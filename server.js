@@ -21,6 +21,61 @@ app.get('/', function(req, res) {
   res.json({ status: 'ok', service: 'Grupo Dicas Roteiro Generator' });
 });
 
+// Reenviar SMS para todos que tem celular e status Enviado
+app.get('/reenviar-sms', async function(req, res) {
+  try {
+    var allRecords = [];
+    var offset = null;
+    do {
+      var url = 'https://api.airtable.com/v0/' + process.env.AIRTABLE_BASE_ID + '/Pedidos?pageSize=100' + (offset ? '&offset=' + offset : '');
+      var aRes = await fetch(url, {
+        headers: { 'Authorization': 'Bearer ' + process.env.AIRTABLE_TOKEN }
+      });
+      var aData = await aRes.json();
+      allRecords = allRecords.concat(aData.records || []);
+      offset = aData.offset;
+    } while (offset);
+
+    var enviados = 0;
+    var erros = 0;
+    var pulados = 0;
+
+    for (var i = 0; i < allRecords.length; i++) {
+      var f = allRecords[i].fields;
+      if (f.Status !== 'Enviado') { pulados++; continue; }
+      if (!f.Celular || !f.Celular.trim()) { pulados++; continue; }
+
+      var nomeFirst = f.Nome ? f.Nome.split(' ')[0] : 'Viajante';
+      var emailMascarado = mascararEmail(f.Email);
+      var roteiroId = f.Roteiro_ID || allRecords[i].id;
+      var smsBody = 'Olá, ' + nomeFirst + '! Seu roteiro de viagem personalizado ficou pronto! Confira no email enviado para ' + emailMascarado + '. Se não encontrar, verifique as pastas de spam e promoções. Mova para a caixa de entrada para não perder o acesso! Boa viagem! - Equipe Grupo Dicas';
+
+      var nums = f.Celular.replace(/\D/g, '');
+      if (nums.startsWith('55') && nums.length >= 12) {
+        nums = nums.substring(2);
+      }
+      if (nums.length !== 11) { pulados++; continue; }
+
+      try {
+        var smsUrl = 'https://api.smsdev.com.br/v1/send?key=' + process.env.SMSDEV_API_KEY + '&type=9&number=' + nums + '&msg=' + encodeURIComponent(smsBody);
+        var smsRes = await fetch(smsUrl);
+        var smsData = await smsRes.json();
+        console.log('Reenvio SMS para ' + f.Nome + ' (' + nums + '):', JSON.stringify(smsData).substring(0, 100));
+        enviados++;
+        // Pequeno delay entre envios para nao sobrecarregar
+        await new Promise(function(resolve) { setTimeout(resolve, 2000); });
+      } catch (e) {
+        console.error('Erro reenvio SMS ' + f.Nome + ':', e.message);
+        erros++;
+      }
+    }
+
+    res.json({ total: allRecords.length, enviados: enviados, erros: erros, pulados: pulados });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // API endpoint para dados do dashboard (JSON)
 app.get('/api/dashboard', async function(req, res) {
   try {
