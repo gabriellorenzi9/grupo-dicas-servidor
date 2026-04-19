@@ -716,7 +716,7 @@ async function enviarEmailESms(reg) {
   if (f.Celular && process.env.SMSDEV_API_KEY) {
     console.log('Enviando SMS via SMSDev para:', f.Celular);
     var emailMascarado = mascararEmail(f.Email);
-    var smsBody = 'Ola, ' + nomeFirst + '! Seu roteiro de viagem personalizado ficou pronto! Confira no email enviado para ' + emailMascarado + '. Se nao encontrar, verifique as pastas de spam e promocoes. Mova para a caixa de entrada para nao perder o acesso! Boa viagem! - Equipe Grupo Dicas';
+    var smsBody = 'Olá, ' + nomeFirst + '! Seu roteiro de viagem personalizado ficou pronto! Confira no email enviado para ' + emailMascarado + '. Se não encontrar, verifique as pastas de spam e promoções. Mova para a caixa de entrada para não perder o acesso! Boa viagem! - Equipe Grupo Dicas';
 
     // Extrair apenas DDD + numero (11 digitos) para SMSDev
     var nums = f.Celular.replace(/\D/g, '');
