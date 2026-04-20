@@ -381,6 +381,14 @@ setInterval(loadData, 60000);
 app.post('/gerar', function(req, res) {
   var d = req.body;
   console.log('Recebido pedido de:', d.nome, '-', d.destino);
+
+  // Trava: máximo 20 dias
+  if (Number(d.duracaoDias) > 20) {
+    console.log('BLOQUEADO: roteiro de ' + d.duracaoDias + ' dias (max 20)');
+    res.json({ success: false, message: 'Máximo de 20 dias permitido' });
+    return;
+  }
+
   res.json({ success: true, message: 'Roteiro sendo gerado' });
   processarRoteiro(d).catch(function(err) {
     console.error('Erro fatal ao processar roteiro:', err.message);
