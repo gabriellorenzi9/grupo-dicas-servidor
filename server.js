@@ -301,20 +301,7 @@ function renderDashboard(records) {
     var db = b[0].split('/').reverse().join('-');
     return da.localeCompare(db);
   }).slice(-30);
-
-  // Combinar gerados e visualizacoes por dia
-  var allDays = {};
-  dailyArr.forEach(function(d) { allDays[d[0]] = { gerados: d[1], views: 0 }; });
-  Object.entries(acessosDiarioMap).forEach(function(d) {
-    if (allDays[d[0]]) { allDays[d[0]].views = d[1]; }
-    else { allDays[d[0]] = { gerados: 0, views: d[1] }; }
-  });
-  var dailyCombined = Object.entries(allDays).sort(function(a,b){
-    var da = a[0].split('/').reverse().join('-');
-    var db = b[0].split('/').reverse().join('-');
-    return da.localeCompare(db);
-  }).slice(-30);
-  var maxD = Math.max.apply(null, dailyCombined.map(function(d){ return Math.max(d[1].gerados, d[1].views); })) || 1;
+  var maxD = Math.max.apply(null, dailyArr.map(function(d){return d[1]})) || 1;
 
   var monthlyArr = Object.entries(monthlyMap).sort(function(a,b){
     var ma = new Date(a[0]); var mb = new Date(b[0]);
@@ -322,26 +309,32 @@ function renderDashboard(records) {
   });
   var maxM = Math.max.apply(null, monthlyArr.map(function(d){return d[1]})) || 1;
 
+  // Visualizacoes por dia (ultimos 30 dias)
+  var viewsArr = Object.entries(acessosDiarioMap).sort(function(a,b){
+    var da = a[0].split('/').reverse().join('-');
+    var db = b[0].split('/').reverse().join('-');
+    return da.localeCompare(db);
+  }).slice(-30);
+  var maxV = Math.max.apply(null, viewsArr.map(function(d){return d[1]})) || 1;
+
   html += '<div class="charts">';
-  // Bar chart diario com barras duplas
-  html += '<div class="card"><h3 class="card-title">📈 Roteiros Gerados vs Visualizados (últimos 30 dias)</h3>';
-  html += '<div style="display:flex;gap:16px;margin-bottom:12px;font-size:11px;color:rgba(255,255,255,0.5)"><span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#00BCD4"></span> Gerados</span><span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:2px;background:#F97316"></span> Visualizados</span></div>';
-  html += '<div class="bar-chart">';
-  dailyCombined.forEach(function(d) {
-    var g = d[1].gerados;
-    var v = d[1].views;
-    var hg = Math.round((g/maxD)*120);
-    var hv = Math.round((v/maxD)*120);
+  // Bar chart diario - roteiros gerados
+  html += '<div class="card"><h3 class="card-title">📈 Roteiros por Dia (últimos 30 dias)</h3><div class="bar-chart">';
+  dailyArr.forEach(function(d) {
+    var h = Math.round((d[1]/maxD)*120);
     var label = d[0].substring(0,5);
-    html += '<div class="bar-col">';
-    html += '<span class="bar-val" style="font-size:9px">'+g+(v>0?'/'+v:'')+'</span>';
-    html += '<div style="display:flex;gap:2px;align-items:flex-end;width:100%;height:120px">';
-    html += '<div style="flex:1;height:'+hg+'px;background:linear-gradient(180deg,#00BCD4,#0097A7);border-radius:4px 4px 1px 1px;min-height:2px"></div>';
-    html += '<div style="flex:1;height:'+hv+'px;background:linear-gradient(180deg,#F97316,#EA580C);border-radius:4px 4px 1px 1px;min-height:'+(v>0?'2':'0')+'px"></div>';
-    html += '</div>';
-    html += '<span class="bar-label">'+label+'</span>';
-    html += '</div>';
+    html += '<div class="bar-col"><span class="bar-val">'+d[1]+'</span><div class="bar" style="height:'+h+'px"></div><span class="bar-label">'+label+'</span></div>';
   });
+  html += '</div></div>';
+
+  // Bar chart diario - visualizacoes
+  html += '<div class="card"><h3 class="card-title">👁️ Visualizações por Dia (últimos 30 dias)</h3><div class="bar-chart">';
+  viewsArr.forEach(function(d) {
+    var h = Math.round((d[1]/maxV)*120);
+    var label = d[0].substring(0,5);
+    html += '<div class="bar-col"><span class="bar-val">'+d[1]+'</span><div class="bar" style="height:'+h+'px;background:linear-gradient(180deg,#F97316,#EA580C)"></div><span class="bar-label">'+label+'</span></div>';
+  });
+  if (!viewsArr.length) html += '<p style="color:rgba(255,255,255,0.3)">Nenhuma visualização ainda</p>';
   html += '</div></div>';
 
   // Bar chart mensal
