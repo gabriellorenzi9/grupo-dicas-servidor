@@ -185,6 +185,8 @@ function renderDashboard(records) {
   var sc = {Gerando:0,Gerado:0,Enviado:0,Erro:0};
   var dailyMap = {}, monthlyMap = {}, orcMap = {}, viajMap = {};
   var cidadeMap = {}, paisMap = {};
+  var totalAcessos = 0, acessosHoje = 0, roteirosAbertos = 0;
+  var acessosDiarioMap = {};
   var hoje = new Date().toLocaleDateString('pt-BR');
   var hojeCount = 0;
   var comCel = 0;
@@ -246,6 +248,19 @@ function renderDashboard(records) {
     var viaj = f.Viajantes || 'N/A';
     viajMap[viaj] = (viajMap[viaj]||0) + 1;
 
+    // Contar acessos/visualizacoes
+    if (f.Acessos && f.Acessos.trim()) {
+      var acessosList = f.Acessos.split(' | ');
+      totalAcessos += acessosList.length;
+      roteirosAbertos++;
+      acessosList.forEach(function(ac) {
+        // Formato: DD/MM/YYYY HH:MM:SS
+        var acDia = ac.trim().split(' ')[0];
+        if (acDia === hoje) acessosHoje++;
+        acessosDiarioMap[acDia] = (acessosDiarioMap[acDia]||0) + 1;
+      });
+    }
+
     // Extrair cidades e paises (ultimos 30 dias)
     if (criadoDate && criadoDate >= d30) {
       var destLower = (f.Destino||'').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'');
@@ -263,6 +278,8 @@ function renderDashboard(records) {
   });
 
   var taxaCel = total > 0 ? Math.round((comCel/total)*100) : 0;
+  var enviados = sc.Enviado || 0;
+  var taxaAbertura = enviados > 0 ? Math.round((roteirosAbertos/enviados)*100) : 0;
 
   // KPIs
   var html = '<div class="kpi-grid">';
@@ -273,6 +290,9 @@ function renderDashboard(records) {
   html += kpi('🔄','Gerando Agora',sc.Gerando||0,'#F59E0B');
   html += kpi('❌','Erros',sc.Erro||0,'#EF4444');
   html += kpi('📱','Com Celular',taxaCel+'%','#8B5CF6');
+  html += kpi('👁️','Visualizações Hoje',acessosHoje,'#F97316');
+  html += kpi('📈','Total Visualizações',totalAcessos,'#06B6D4');
+  html += kpi('📂','Roteiros Abertos',roteirosAbertos+'/'+enviados+' ('+taxaAbertura+'%)','#10B981');
   html += '</div>';
 
   // ===== GRAFICOS DIARIO (30 dias) + MENSAL =====
