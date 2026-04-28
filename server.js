@@ -21,6 +21,53 @@ app.get('/', function(req, res) {
   res.json({ status: 'ok', service: 'Grupo Dicas Roteiro Generator' });
 });
 
+// ========== TWILIO WEBHOOKS - Receber SMS e Ligações ==========
+var mensagensRecebidas = [];
+
+// Receber SMS
+app.post('/twilio-sms', function(req, res) {
+  var from = req.body.From || 'desconhecido';
+  var body = req.body.Body || '';
+  var timestamp = new Date().toISOString();
+  console.log('=== SMS RECEBIDO de ' + from + ': ' + body + ' ===');
+  mensagensRecebidas.unshift({ tipo: 'SMS', de: from, mensagem: body, hora: timestamp });
+  res.type('text/xml');
+  res.send('<Response></Response>');
+});
+
+// Receber Ligação (captura o código por voz via gravação)
+app.post('/twilio-voice', function(req, res) {
+  var from = req.body.From || 'desconhecido';
+  var timestamp = new Date().toISOString();
+  console.log('=== LIGACAO RECEBIDA de ' + from + ' ===');
+  mensagensRecebidas.unshift({ tipo: 'LIGACAO', de: from, mensagem: 'Ligação recebida - veja logs', hora: timestamp });
+  res.type('text/xml');
+  res.send('<Response><Say language="en-US">Please leave your verification code after the beep.</Say><Record maxLength="30" transcribe="true" transcribeCallback="/twilio-transcription"/></Response>');
+});
+
+// Receber transcrição da ligação
+app.post('/twilio-transcription', function(req, res) {
+  var text = req.body.TranscriptionText || '';
+  var timestamp = new Date().toISOString();
+  console.log('=== TRANSCRICAO: ' + text + ' ===');
+  mensagensRecebidas.unshift({ tipo: 'TRANSCRICAO', de: 'voicemail', mensagem: text, hora: timestamp });
+  res.sendStatus(200);
+});
+
+// Ver mensagens recebidas (acessar pelo navegador)
+app.get('/mensagens', function(req, res) {
+  var html = '<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="5"><title>Mensagens Recebidas</title><style>body{font-family:sans-serif;max-width:800px;margin:40px auto;padding:20px}h1{color:#00BCD4}table{width:100%;border-collapse:collapse}th,td{padding:10px;border:1px solid #ddd;text-align:left}th{background:#f5f5f5}.msg{font-weight:bold;color:#E91E8C;font-size:18px}</style></head><body>';
+  html += '<h1>Mensagens Recebidas no Twilio</h1>';
+  html += '<p>Atualiza automaticamente a cada 5 segundos</p>';
+  html += '<table><tr><th>Tipo</th><th>De</th><th>Mensagem</th><th>Hora</th></tr>';
+  mensagensRecebidas.forEach(function(m) {
+    html += '<tr><td>' + m.tipo + '</td><td>' + m.de + '</td><td class="msg">' + m.mensagem + '</td><td>' + m.hora + '</td></tr>';
+  });
+  if (mensagensRecebidas.length === 0) html += '<tr><td colspan="4">Nenhuma mensagem recebida ainda...</td></tr>';
+  html += '</table></body></html>';
+  res.send(html);
+});
+
 // Reenviar SMS para todos que tem celular e status Enviado
 app.get('/reenviar-sms', async function(req, res) {
   try {
