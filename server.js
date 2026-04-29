@@ -959,47 +959,73 @@ async function enviarEmailESms(reg) {
     console.error('Erro ao enviar email:', e.message);
   }
 
-  // 2. Enviar SMS via SMSDev (se celular foi informado)
-  var smsEnviado = 'Não';
-  if (f.Celular && process.env.SMSDEV_API_KEY) {
-    console.log('Enviando SMS via SMSDev para:', f.Celular);
-    var emailMascarado = mascararEmail(f.Email);
-    var smsBody = 'Olá, ' + nomeFirst + '! Seu roteiro de viagem personalizado ficou pronto! Confira no email enviado para ' + emailMascarado + '. Se não encontrar, verifique as pastas de spam e promoções. Mova para a caixa de entrada para não perder o acesso! Boa viagem! - Equipe Grupo Dicas';
+  // 2. Enviar WhatsApp via Meta Cloud API (se celular foi informado)
+  var whatsappEnviado = 'Não';
+  if (f.Celular && process.env.WHATSAPP_TOKEN && process.env.WHATSAPP_PHONE_ID) {
+    console.log('Enviando WhatsApp para:', f.Celular);
 
-    // Extrair apenas DDD + numero (11 digitos) para SMSDev
-    var nums = f.Celular.replace(/\D/g, '');
-    // Se veio com +55, remover o 55 do inicio
-    if (nums.startsWith('55') && nums.length >= 12) {
-      nums = nums.substring(2);
+    // Formatar numero: precisa ser apenas digitos com codigo do pais, sem + (ex: 5511999999999)
+    var waNumber = f.Celular.replace(/\D/g, '');
+    // Se nao comeca com codigo de pais, adicionar 55 (Brasil)
+    if (waNumber.length === 11) {
+      waNumber = '55' + waNumber;
     }
-    // Se ainda nao tem 11 digitos (DDD + 9 digitos), pode ser internacional - nao enviar
-    if (nums.length !== 11) {
-      console.log('SMS: numero nao brasileiro ou formato invalido (' + nums.length + ' digitos), pulando envio');
-      smsEnviado = 'Não (internacional)';
-    } else {
-      console.log('SMS numero formatado:', nums);
-      try {
-        var smsUrl = 'https://api.smsdev.com.br/v1/send?key=' + process.env.SMSDEV_API_KEY + '&type=9&number=' + nums + '&msg=' + encodeURIComponent(smsBody);
-        var smsRes = await fetch(smsUrl);
-        var smsData = await smsRes.json();
-        console.log('SMS SMSDev resposta:', JSON.stringify(smsData).substring(0, 200));
-        if (smsData.situacao === 'OK') {
-          smsEnviado = 'Sim';
-        } else {
-          smsEnviado = 'Erro: ' + (smsData.descricao || smsData.situacao || 'desconhecido');
-        }
-      } catch (smsErr) {
-        console.error('Erro ao enviar SMS:', smsErr.message);
-        smsEnviado = 'Erro: ' + smsErr.message;
+
+    var roteiroUrl = 'https://grupo-dicas-roteiro.vercel.app/api/roteiro?id=' + roteiroId;
+
+    try {
+      var waRes = await fetch('https://graph.facebook.com/v25.0/' + process.env.WHATSAPP_PHONE_ID + '/messages', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + process.env.WHATSAPP_TOKEN,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          to: waNumber,
+          type: 'template',
+          template: {
+            name: 'roteiro_pronto',
+            language: { code: 'pt_BR' },
+            components: [
+              {
+                type: 'body',
+                parameters: [
+                  { type: 'text', text: nomeFirst },
+                  { type: 'text', text: roteiroUrl }
+                ]
+              },
+              {
+                type: 'button',
+                sub_type: 'url',
+                index: '0',
+                parameters: [
+                  { type: 'text', text: roteiroId }
+                ]
+              }
+            ]
+          }
+        })
+      });
+      var waData = await waRes.json();
+      console.log('WhatsApp resposta:', JSON.stringify(waData).substring(0, 300));
+
+      if (waData.messages && waData.messages[0] && waData.messages[0].id) {
+        whatsappEnviado = 'Sim';
+      } else {
+        whatsappEnviado = 'Erro: ' + (waData.error ? waData.error.message : JSON.stringify(waData).substring(0, 100));
       }
+    } catch (waErr) {
+      console.error('Erro ao enviar WhatsApp:', waErr.message);
+      whatsappEnviado = 'Erro: ' + waErr.message;
     }
   } else if (!f.Celular || !f.Celular.trim()) {
-    smsEnviado = 'Sem celular';
+    whatsappEnviado = 'Sem celular';
   }
 
-  // 3. Atualizar Airtable para Enviado + status SMS
-  await atualizarAirtable(recordId, { Status: 'Enviado', SMS_Enviado: smsEnviado });
-  console.log('=== ROTEIRO ENVIADO! ID:', roteiroId, '| SMS:', smsEnviado, '===');
+  // 3. Atualizar Airtable para Enviado + status WhatsApp
+  await atualizarAirtable(recordId, { Status: 'Enviado', SMS_Enviado: whatsappEnviado });
+  console.log('=== ROTEIRO ENVIADO! ID:', roteiroId, '| WhatsApp:', whatsappEnviado, '===');
 }
 
 // =============================================================
