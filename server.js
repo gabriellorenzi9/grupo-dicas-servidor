@@ -905,6 +905,103 @@ setInterval(verificarFilaDeEnvio, 5 * 60 * 1000);
 setTimeout(verificarFilaDeEnvio, 30 * 1000);
 
 // =============================================================
+// REENVIO WHATSAPP - Para quem não abriu o roteiro (5 por hora, 9h-20h BRT)
+// =============================================================
+async function reenviarWhatsAppPendentes() {
+  try {
+    // Verificar horario (9h-20h horario de Brasilia = UTC-3)
+    var agora = new Date();
+    var horaBrt = (agora.getUTCHours() - 3 + 24) % 24;
+    if (horaBrt < 9 || horaBrt >= 20) {
+      return; // Fora do horario comercial
+    }
+
+    // Buscar roteiros com Status=Enviado, que tem Celular, nao tem Acessos, e nao tem campo WA_Reenvio
+    var filter = encodeURIComponent("AND({Status}='Enviado',{Celular}!='',{Acessos}='',{WA_Reenvio}='')");
+    var url = 'https://api.airtable.com/v0/' + process.env.AIRTABLE_BASE_ID + '/Pedidos?filterByFormula=' + filter + '&maxRecords=5&sort%5B0%5D%5Bfield%5D=Criado_Em&sort%5B0%5D%5Bdirection%5D=desc';
+    var res = await fetch(url, {
+      headers: { 'Authorization': 'Bearer ' + process.env.AIRTABLE_TOKEN }
+    });
+    var data = await res.json();
+
+    if (!data.records || data.records.length === 0) {
+      return;
+    }
+
+    console.log('=== Reenvio WhatsApp: ' + data.records.length + ' pendentes encontrados ===');
+
+    for (var i = 0; i < data.records.length; i++) {
+      var reg = data.records[i];
+      var f = reg.fields;
+      var nomeFirst = f.Nome ? f.Nome.split(' ')[0] : 'Viajante';
+      var roteiroId = f.Roteiro_ID || reg.id;
+      var roteiroUrl = 'https://grupo-dicas-roteiro.vercel.app/api/roteiro?id=' + roteiroId;
+
+      // Formatar numero
+      var waNumber = f.Celular.replace(/\D/g, '');
+      if (waNumber.length === 11) {
+        waNumber = '55' + waNumber;
+      }
+
+      try {
+        var waRes = await fetch('https://graph.facebook.com/v25.0/' + process.env.WHATSAPP_PHONE_ID + '/messages', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + process.env.WHATSAPP_TOKEN,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            messaging_product: 'whatsapp',
+            to: waNumber,
+            type: 'template',
+            template: {
+              name: 'roteiro_pronto',
+              language: { code: 'pt_BR' },
+              components: [
+                {
+                  type: 'body',
+                  parameters: [
+                    { type: 'text', text: nomeFirst },
+                    { type: 'text', text: roteiroUrl }
+                  ]
+                },
+                {
+                  type: 'button',
+                  sub_type: 'url',
+                  index: '0',
+                  parameters: [
+                    { type: 'text', text: roteiroId }
+                  ]
+                }
+              ]
+            }
+          })
+        });
+        var waData = await waRes.json();
+        var status = (waData.messages && waData.messages[0]) ? 'Sim' : 'Erro';
+        console.log('Reenvio WhatsApp para ' + f.Nome + ' (' + waNumber + '): ' + status);
+
+        // Marcar como reenviado no Airtable (pra nao enviar de novo)
+        await atualizarAirtable(reg.id, { WA_Reenvio: new Date().toISOString() });
+
+        // Delay de 30s entre envios pra nao sobrecarregar
+        await new Promise(function(resolve) { setTimeout(resolve, 30000); });
+      } catch (e) {
+        console.error('Erro reenvio WhatsApp ' + f.Nome + ':', e.message);
+        await atualizarAirtable(reg.id, { WA_Reenvio: 'Erro: ' + e.message });
+      }
+    }
+  } catch (e) {
+    console.error('Erro no loop de reenvio WhatsApp:', e.message);
+  }
+}
+
+// Rodar a cada 1 hora
+setInterval(reenviarWhatsAppPendentes, 60 * 60 * 1000);
+// Primeira execução 2 min após iniciar
+setTimeout(reenviarWhatsAppPendentes, 2 * 60 * 1000);
+
+// =============================================================
 // ENVIO DE EMAIL + SMS (chamado pela fila)
 // =============================================================
 async function enviarEmailESms(reg) {
