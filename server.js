@@ -693,6 +693,7 @@ async function processarRoteiro(d) {
               Orcamento: d.orcamento || '',
               Interesses: d.interesses || '',
               Celular: d.celular || '',
+              Ja_Tem: d.jaTem || '',
               Status: 'Gerando'
             }
           }]
