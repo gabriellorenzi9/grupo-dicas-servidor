@@ -1348,10 +1348,15 @@ async function buscarHoteis(destino, orcamento) {
       });
       var data = await res.json();
       if (data.records) {
-        // Filtrar por orcamento (campo multi-select, verificar se contem o orcamento do usuario)
+        // Filtrar por orcamento (campo multi-select, pode ser array ou string)
         var orcLower = (orcamento || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         data.records.forEach(function(r) {
-          var orcHotel = (r.fields.Orcamento || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          var orcHotel = r.fields.Orcamento || '';
+          // Se for array (multi-select), juntar em string
+          if (Array.isArray(orcHotel)) {
+            orcHotel = orcHotel.join(' ');
+          }
+          orcHotel = orcHotel.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
           if (orcHotel.includes(orcLower) || orcLower === '') {
             todosHoteis.push(r.fields);
           }
