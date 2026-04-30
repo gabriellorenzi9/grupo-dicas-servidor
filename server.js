@@ -916,8 +916,9 @@ async function reenviarWhatsAppPendentes() {
       return; // Fora do horario comercial
     }
 
-    // Buscar roteiros com Status=Enviado, que tem Celular, nao tem Acessos, e nao tem campo WA_Reenvio
-    var filter = encodeURIComponent("AND({Status}='Enviado',{Celular}!='',{Acessos}='',{WA_Reenvio}='')");
+    // Buscar roteiros com Status=Enviado, que tem Celular, nao tem Acessos, nao tem WA_Reenvio
+    // E criado ANTES de 28/04/2026 (quando WhatsApp foi ativado) - evita reenviar pra quem ja recebeu WhatsApp
+    var filter = encodeURIComponent("AND({Status}='Enviado',{Celular}!='',{Acessos}='',{WA_Reenvio}='',IS_BEFORE(CREATED_TIME(),'2026-04-28'))");
     var url = 'https://api.airtable.com/v0/' + process.env.AIRTABLE_BASE_ID + '/Pedidos?filterByFormula=' + filter + '&maxRecords=5&sort%5B0%5D%5Bfield%5D=Criado_Em&sort%5B0%5D%5Bdirection%5D=desc';
     var res = await fetch(url, {
       headers: { 'Authorization': 'Bearer ' + process.env.AIRTABLE_TOKEN }
