@@ -240,7 +240,7 @@ function renderDashboard(records) {
 
   // Mapa de cidades para paises
   var cidadePais = {
-    'roma':'Itália','florenca':'Itália','veneza':'Itália','milao':'Itália','napoles':'Itália','florença':'Itália','milano':'Itália','toscana':'Itália','amalfi':'Itália','cinque terre':'Itália',
+    'roma':'Itália','florenca':'Itália','veneza':'Itália','milao':'Itália','napoles':'Itália','milano':'Itália','toscana':'Itália','amalfi':'Itália','cinque terre':'Itália',
     'paris':'França','nice':'França','lyon':'França','marselha':'França','bordeaux':'França',
     'londres':'Inglaterra','liverpool':'Inglaterra','edinburgo':'Escócia','dublin':'Irlanda',
     'barcelona':'Espanha','madri':'Espanha','madrid':'Espanha','sevilha':'Espanha','ibiza':'Espanha','mallorca':'Espanha','malaga':'Espanha',
@@ -394,12 +394,12 @@ function renderDashboard(records) {
   html += '</div></div></div>';
 
   // ===== TOP 15 CIDADES + TOP 15 PAISES (ultimos 30 dias) =====
-  var topCidades = Object.entries(cidadeMap).sort(function(a,b){return b[1]-a[1]}).slice(0,15);
-  var topPaises = Object.entries(paisMap).sort(function(a,b){return b[1]-a[1]}).slice(0,15);
+  var topCidades = Object.entries(cidadeMap).sort(function(a,b){return b[1]-a[1]}).slice(0,50);
+  var topPaises = Object.entries(paisMap).sort(function(a,b){return b[1]-a[1]}).slice(0,50);
 
   html += '<div class="charts">';
   // Top cidades
-  html += '<div class="card"><h3 class="card-title">🏙️ Top 15 Cidades (últimos 30 dias)</h3>';
+  html += '<div class="card"><h3 class="card-title">🏙️ Top 50 Cidades (últimos 30 dias)</h3>';
   var topCMax = topCidades[0] ? topCidades[0][1] : 1;
   topCidades.forEach(function(d, i) {
     var w = Math.round((d[1]/topCMax)*100);
@@ -409,7 +409,7 @@ function renderDashboard(records) {
   html += '</div>';
 
   // Top paises
-  html += '<div class="card"><h3 class="card-title">🌍 Top 15 Países (últimos 30 dias)</h3>';
+  html += '<div class="card"><h3 class="card-title">🌍 Top 50 Países (últimos 30 dias)</h3>';
   var topPMax = topPaises[0] ? topPaises[0][1] : 1;
   topPaises.forEach(function(d, i) {
     var w = Math.round((d[1]/topPMax)*100);
@@ -1163,7 +1163,10 @@ async function enviarEmailESms(reg) {
 // =============================================================
 async function gerarHtmlComClaude(d) {
   var startTime = Date.now();
-  var userPrompt = buildUserPrompt(d);
+
+  // Buscar hoteis no Airtable antes de gerar
+  var hoteisTexto = await buscarHoteis(d.destino, d.orcamento);
+  var userPrompt = buildUserPrompt(d, hoteisTexto);
   var customId = 'roteiro_' + Date.now();
 
   console.log('Enviando para Batch API (50% desconto)...');
@@ -1291,7 +1294,118 @@ async function gerarHtmlComClaude(d) {
 // =============================================================
 // USER PROMPT - DADOS VARIAVEIS DO USUARIO
 // =============================================================
-function buildUserPrompt(d) {
+// =============================================================
+// BUSCAR HOTEIS NO AIRTABLE (tabela Hoteis)
+// =============================================================
+async function buscarHoteis(destino, orcamento) {
+  if (!process.env.AIRTABLE_HOTEIS_BASE_ID) return '';
+
+  try {
+    // Extrair cidades do destino (texto livre)
+    var destinoLower = destino.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    var cidadesConhecidas = [
+      'roma', 'florenca', 'veneza', 'milao', 'napoles', 'toscana', 'amalfi',
+      'paris', 'nice', 'lyon', 'marselha', 'bordeaux',
+      'londres', 'liverpool', 'edinburgo', 'dublin',
+      'barcelona', 'madri', 'madrid', 'sevilha', 'ibiza', 'mallorca', 'malaga',
+      'lisboa', 'porto', 'algarve', 'faro',
+      'berlim', 'munique', 'frankfurt',
+      'amsterda', 'amsterdam', 'praga', 'viena', 'zurique', 'genebra', 'interlaken',
+      'atenas', 'santorini', 'mykonos',
+      'istambul', 'cairo', 'dubai',
+      'miami', 'orlando', 'nova york', 'new york', 'las vegas', 'los angeles', 'san francisco', 'chicago', 'washington', 'boston', 'hawaii',
+      'cancun', 'riviera maya', 'playa del carmen', 'punta cana',
+      'buenos aires', 'bariloche', 'mendoza', 'ushuaia',
+      'santiago', 'atacama', 'cartagena', 'bogota', 'cusco', 'lima',
+      'tokyo', 'kyoto', 'osaka', 'bangkok', 'phuket', 'bali',
+      'rio de janeiro', 'sao paulo', 'florianopolis', 'salvador', 'gramado', 'bonito', 'fernando de noronha', 'maceio', 'fortaleza', 'jericoacoara'
+    ];
+
+    var cidadesEncontradas = [];
+    cidadesConhecidas.forEach(function(c) {
+      var cNorm = c.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (destinoLower.includes(cNorm)) {
+        cidadesEncontradas.push(c.charAt(0).toUpperCase() + c.slice(1));
+      }
+    });
+
+    if (cidadesEncontradas.length === 0) {
+      console.log('Hoteis: nenhuma cidade conhecida encontrada em "' + destino + '"');
+      return '';
+    }
+
+    console.log('Hoteis: buscando para cidades:', cidadesEncontradas.join(', '));
+
+    // Buscar hoteis para cada cidade encontrada
+    var todosHoteis = [];
+    for (var i = 0; i < cidadesEncontradas.length; i++) {
+      var cidade = cidadesEncontradas[i];
+      // Buscar todos os hoteis da cidade (filtramos orcamento no codigo pq campo e multi-select)
+      var filter = encodeURIComponent("SEARCH('" + cidade + "',{Cidade})");
+      var url = 'https://api.airtable.com/v0/' + process.env.AIRTABLE_HOTEIS_BASE_ID + '/Hoteis?filterByFormula=' + filter;
+      var res = await fetch(url, {
+        headers: { 'Authorization': 'Bearer ' + process.env.AIRTABLE_TOKEN }
+      });
+      var data = await res.json();
+      if (data.records) {
+        // Filtrar por orcamento (campo multi-select, verificar se contem o orcamento do usuario)
+        var orcLower = (orcamento || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        data.records.forEach(function(r) {
+          var orcHotel = (r.fields.Orcamento || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          if (orcHotel.includes(orcLower) || orcLower === '') {
+            todosHoteis.push(r.fields);
+          }
+        });
+      }
+    }
+
+    if (todosHoteis.length === 0) {
+      console.log('Hoteis: nenhum hotel encontrado para orcamento "' + orcamento + '"');
+      return '';
+    }
+
+    console.log('Hoteis: encontrados ' + todosHoteis.length + ' hoteis');
+
+    // Montar texto dos hoteis para injetar no prompt
+    var textoHoteis = '\n\nHOTEIS OBRIGATORIOS PARA ESTE ROTEIRO - USE SOMENTE ESTES HOTEIS:\n';
+    textoHoteis += '(NAO invente outros hoteis. Use APENAS os listados abaixo. Os links ja estao corretos e validados.)\n\n';
+
+    var hotelNum = 1;
+    todosHoteis.forEach(function(h) {
+      textoHoteis += 'HOTEL ' + hotelNum + ':\n';
+      textoHoteis += '- Cidade: ' + (h.Cidade || '') + '\n';
+      textoHoteis += '- Nome: ' + (h.Nome || '') + '\n';
+      textoHoteis += '- Tipo: ' + (h.Tipo_Hospedagem || 'Hotel') + '\n';
+      textoHoteis += '- Estrelas: ' + (h.Estrelas || '') + '\n';
+      textoHoteis += '- Nota Booking: ' + (h.Nota_Booking || '') + '/10 (' + (h.Avaliacoes || '') + ' avaliacoes)\n';
+      textoHoteis += '- Bairro: ' + (h.Bairro || '') + '\n';
+      textoHoteis += '- Distancia: ' + (h.Distancia_Centro || '') + '\n';
+      textoHoteis += '- Descricao: ' + (h.Descricao || '') + '\n';
+      textoHoteis += '- Diferencial: ' + (h.Diferencial || '') + '\n';
+      textoHoteis += '- Ideal para: ' + (h.Ideal_Para || '') + '\n';
+      textoHoteis += '- Amenidades: ' + (h.Wifi_Cafe || '') + '\n';
+      textoHoteis += '- Cancelamento: ' + (h.Cancelamento || '') + '\n';
+      textoHoteis += '- LINK BOOKING (usar exatamente este): ' + (h.Link_Booking || '') + '\n';
+      textoHoteis += '- AVISO OBRIGATORIO: Esse hotel esta esgotando rapido!\n';
+      textoHoteis += '\n';
+      hotelNum++;
+    });
+
+    textoHoteis += 'REGRAS DOS HOTEIS:\n';
+    textoHoteis += '- Use SOMENTE os hoteis listados acima. NAO invente outros.\n';
+    textoHoteis += '- Use o LINK BOOKING exatamente como fornecido, sem modificar.\n';
+    textoHoteis += '- Inclua o aviso "Esse hotel esta esgotando rapido!" em TODOS os hoteis.\n';
+    textoHoteis += '- Destaque as qualidades de cada hotel usando a descricao e diferencial fornecidos.\n';
+    textoHoteis += '- Se houver hoteis tipo "Resort All Inclusive", separe em secao propria.\n';
+
+    return textoHoteis;
+  } catch (e) {
+    console.error('Erro ao buscar hoteis:', e.message);
+    return '';
+  }
+}
+
+function buildUserPrompt(d, hoteisTexto) {
   return [
     'Gere um roteiro personalizado com os seguintes dados:',
     '',
@@ -1306,6 +1420,8 @@ function buildUserPrompt(d) {
     '- Estilo de viagem: ' + d.orcamento,
     '- Interesses: ' + d.interesses,
     '- Primeira vez no destino: ' + d.primeiraVez,
+    '',
+    hoteisTexto || '',
     '',
     'Siga rigorosamente TODAS as regras e as 9 secoes obrigatorias. Retorne APENAS o HTML completo.'
   ].join('\n');
