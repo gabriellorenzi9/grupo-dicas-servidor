@@ -1402,13 +1402,13 @@ async function buscarHoteis(destino, orcamento) {
       hotelNum++;
     });
 
-    textoHoteis += 'REGRAS DOS HOTEIS:\n';
+    textoHoteis += 'REGRAS DOS HOTEIS - SEGUIR A RISCA, SEM EXCECAO:\n';
     textoHoteis += '- Use SOMENTE os hoteis listados acima. NAO invente outros.\n';
     textoHoteis += '- Use o LINK BOOKING exatamente como fornecido, sem modificar NENHUM caractere. O link ja contem o codigo de afiliado (aid=390200). Se voce remover ou alterar qualquer parte do link, o sistema de afiliados nao funciona e perdemos receita. Copie o link INTEGRALMENTE.\n';
-    textoHoteis += '- Inclua o aviso "Esse hotel esta esgotando rapido!" em TODOS os hoteis.\n';
+    textoHoteis += '- OBRIGATORIO em TODOS os hoteis: incluir o aviso em destaque visual (fundo amarelo/laranja claro, texto vermelho/laranja, icone de fogo): "🔥 Esse hotel está esgotando rápido!" - NUNCA omitir esse aviso.\n';
+    textoHoteis += '- PROIBIDO mostrar precos dos hoteis. NUNCA escreva "A partir de R$", "R$ X/noite", ou qualquer valor. A pessoa DEVE clicar no link para ver o preco. Se voce inventar um preco, pode assustar o cliente e perdemos a venda.\n';
     textoHoteis += '- Destaque as qualidades de cada hotel usando a descricao e diferencial fornecidos.\n';
     textoHoteis += '- Se houver hoteis tipo "Resort All Inclusive", separe em secao propria.\n';
-    textoHoteis += '- NUNCA mostre precos dos hoteis no roteiro. A pessoa deve clicar no link para ver o preco. Nao invente precos.\n';
 
     return textoHoteis;
   } catch (e) {
