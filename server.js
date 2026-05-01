@@ -519,7 +519,13 @@ var SYSTEM_PROMPT = [
   '- TRANSPARENCIA: "Ao reservar pelos nossos links, voce nos ajuda a continuar criando conteudo gratuito e roteiros como esse para milhares de viajantes. Nao custa nada a mais pra voce e faz toda a diferenca pra gente continuar esse trabalho. Obrigado!"',
   '- Design sugerido: box com background linear-gradient(135deg, var(--primary), var(--primary-dark)), texto branco, border-radius 20px, padding 30px, com icones de coracao, estrela e moeda',
   '',
-  '4. ONDE FICAR (HOSPEDAGEM) - REGRAS DETALHADAS',
+  '4. HOSPEDAGEM - REGRAS DETALHADAS',
+  '',
+  'TITULO DA SECAO: Em vez de "Onde Ficar", usar titulo persuasivo adaptado ao numero de hoteis e cidade. Exemplos:',
+  '- "Os 2 Melhores Hoteis que Encontramos em Roma" (se 2 hoteis)',
+  '- "Os 4 Melhores Hoteis que Encontramos em Punta Cana" (se 4 hoteis)',
+  '- "Os Melhores Hoteis que Selecionamos para Voce em Paris" (alternativa)',
+  'O titulo deve passar a ideia de curadoria exclusiva, como se a equipe tivesse pesquisado pessoalmente.',
   '',
   'REGRAS GERAIS DE HOTEIS:',
   '- Texto introdutorio: "Esses sao hoteis que ja ficamos hospedados e indicamos de olhos fechados! Selecionamos opcoes com nota acima de 8.0 no Booking, mais de 1000 avaliacoes reais, na melhor localizacao e com os melhores precos da regiao."',
@@ -1390,7 +1396,7 @@ async function buscarHoteis(destino, orcamento) {
       textoHoteis += '- Ideal para: ' + (h.Ideal_Para || '') + '\n';
       textoHoteis += '- Amenidades: ' + (h.Wifi_Cafe || '') + '\n';
       textoHoteis += '- Cancelamento: ' + (h.Cancelamento || '') + '\n';
-      textoHoteis += '- LINK BOOKING (usar exatamente este): ' + (h.Link_Booking || '') + '\n';
+      textoHoteis += '- LINK BOOKING (usar exatamente este): ' + (h.Link_Booking || '') + (h.Link_Booking && h.Link_Booking.includes('?') ? '&' : '?') + 'aid=390200&label=App_' + (h.Pais || '').replace(/ /g, '') + '\n';
       textoHoteis += '- AVISO OBRIGATORIO: Esse hotel esta esgotando rapido!\n';
       textoHoteis += '\n';
       hotelNum++;
@@ -1398,10 +1404,11 @@ async function buscarHoteis(destino, orcamento) {
 
     textoHoteis += 'REGRAS DOS HOTEIS:\n';
     textoHoteis += '- Use SOMENTE os hoteis listados acima. NAO invente outros.\n';
-    textoHoteis += '- Use o LINK BOOKING exatamente como fornecido, sem modificar.\n';
+    textoHoteis += '- Use o LINK BOOKING exatamente como fornecido, sem modificar NENHUM caractere. O link ja contem o codigo de afiliado (aid=390200). Se voce remover ou alterar qualquer parte do link, o sistema de afiliados nao funciona e perdemos receita. Copie o link INTEGRALMENTE.\n';
     textoHoteis += '- Inclua o aviso "Esse hotel esta esgotando rapido!" em TODOS os hoteis.\n';
     textoHoteis += '- Destaque as qualidades de cada hotel usando a descricao e diferencial fornecidos.\n';
     textoHoteis += '- Se houver hoteis tipo "Resort All Inclusive", separe em secao propria.\n';
+    textoHoteis += '- NUNCA mostre precos dos hoteis no roteiro. A pessoa deve clicar no link para ver o preco. Nao invente precos.\n';
 
     return textoHoteis;
   } catch (e) {
