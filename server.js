@@ -1461,6 +1461,280 @@ async function atualizarAirtable(recordId, campos) {
   }
 }
 
+// =============================================================
+// CAMPANHA HOTEIS - Gerar página de hotéis + enviar Email + WhatsApp
+// =============================================================
+var campanhaHoteisRodando = false;
+
+// Endpoint manual pra rodar a campanha
+app.get('/campanha-hoteis', async function(req, res) {
+  if (campanhaHoteisRodando) {
+    return res.json({ status: 'Campanha já está rodando. Aguarde.' });
+  }
+  campanhaHoteisRodando = true;
+  res.json({ status: 'Campanha iniciada! Acompanhe nos logs do Railway.' });
+  try {
+    await processarCampanhaHoteis();
+  } catch(e) {
+    console.error('Erro campanha hoteis:', e.message);
+  }
+  campanhaHoteisRodando = false;
+});
+
+// Loop automatico: roda a cada 1 hora, entre 9h e 21h BRT, 15 por vez
+async function loopCampanhaHoteis() {
+  var agora = new Date();
+  var horaBrt = (agora.getUTCHours() - 3 + 24) % 24;
+  if (horaBrt < 9 || horaBrt >= 21) return;
+  if (campanhaHoteisRodando) return;
+  campanhaHoteisRodando = true;
+  try {
+    await processarCampanhaHoteis();
+  } catch(e) {
+    console.error('Erro loop campanha hoteis:', e.message);
+  }
+  campanhaHoteisRodando = false;
+}
+setInterval(loopCampanhaHoteis, 60 * 60 * 1000);
+setTimeout(loopCampanhaHoteis, 5 * 60 * 1000);
+
+async function processarCampanhaHoteis() {
+  // Cidades que temos na tabela de hoteis
+  var cidadesDisponiveis = ['roma','florenca','florença','veneza','milao','milano','napoles','paris','buenos aires','bariloche','san carlos de bariloche','santiago','barcelona','madrid','madri','lisboa','porto','londres'];
+
+  // Buscar registros com Status=Enviado e NAO tem campo Hoteis_Campanha (inclui com e sem celular)
+  var allRecords = [];
+  var offset = null;
+  do {
+    var filter = encodeURIComponent("AND({Status}='Enviado',{Hoteis_Campanha}='')");
+    var url = 'https://api.airtable.com/v0/' + process.env.AIRTABLE_BASE_ID + '/Pedidos?filterByFormula=' + filter + '&pageSize=100' + (offset ? '&offset=' + offset : '');
+    var aRes = await fetch(url, {
+      headers: { 'Authorization': 'Bearer ' + process.env.AIRTABLE_TOKEN }
+    });
+    var aData = await aRes.json();
+    allRecords = allRecords.concat(aData.records || []);
+    offset = aData.offset;
+  } while (offset);
+
+  console.log('=== Campanha Hoteis: ' + allRecords.length + ' registros pendentes ===');
+
+  var enviados = 0;
+  var pulados = 0;
+  var erros = 0;
+  var LIMITE_POR_EXECUCAO = 35;
+
+  for (var i = 0; i < allRecords.length; i++) {
+    var reg = allRecords[i];
+    var f = reg.fields;
+    var destLower = (f.Destino || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+    // Verificar se alguma cidade do destino esta na nossa tabela
+    var temCidade = false;
+    for (var c = 0; c < cidadesDisponiveis.length; c++) {
+      var cidNorm = cidadesDisponiveis[c].normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (destLower.includes(cidNorm)) {
+        temCidade = true;
+        break;
+      }
+    }
+
+    if (!temCidade) {
+      // Nao marcar como "Sem cidade" permanente - pode ter hoteis no futuro quando alimentar a tabela
+      pulados++;
+      continue;
+    }
+
+    if (enviados >= LIMITE_POR_EXECUCAO) {
+      console.log('Campanha: limite de ' + LIMITE_POR_EXECUCAO + ' por execucao atingido. Continua na proxima hora.');
+      break;
+    }
+
+    try {
+      var roteiroId = f.Roteiro_ID || reg.id;
+      var nomeFirst = f.Nome ? f.Nome.split(' ')[0] : 'Viajante';
+
+      // 1. Buscar hoteis pra esse destino
+      var hoteisTexto = await buscarHoteis(f.Destino, f.Orcamento);
+      if (!hoteisTexto) {
+        console.log('Campanha: sem hoteis encontrados pra ' + f.Nome + ' - ' + f.Destino);
+        pulados++;
+        continue;
+      }
+
+      // 2. Gerar página HTML de hotéis via Claude Sonnet
+      console.log('Campanha: gerando pagina de hoteis pra ' + f.Nome + ' - ' + f.Destino);
+      var hoteisPrompt = 'Gere uma pagina HTML BONITA e COMPLETA somente com a secao de hoteis para o seguinte viajante:\n\n';
+      hoteisPrompt += '- Nome: ' + f.Nome + '\n';
+      hoteisPrompt += '- Destino: ' + f.Destino + '\n';
+      hoteisPrompt += '- Orcamento: ' + (f.Orcamento || 'Moderado') + '\n';
+      hoteisPrompt += '- Viajantes: ' + (f.Viajantes || '') + '\n';
+      hoteisPrompt += '- Pessoas: ' + (f.Pessoas || '') + '\n\n';
+      hoteisPrompt += hoteisTexto + '\n\n';
+      hoteisPrompt += 'REGRAS:\n';
+      hoteisPrompt += '- Gere APENAS HTML completo comecando com <!DOCTYPE html>\n';
+      hoteisPrompt += '- Use fonte Poppins do Google Fonts\n';
+      hoteisPrompt += '- Use cores: --primary: #00BCD4; --magenta: #E91E8C; --text: #1A1A2E\n';
+      hoteisPrompt += '- Design responsivo, moderno e profissional\n';
+      hoteisPrompt += '- Inclua header com logo GRUPO DICAS em texto (GRUPO em magenta, DICAS em cyan)\n';
+      hoteisPrompt += '- Titulo: "Hoteis Selecionados para ' + nomeFirst + '"\n';
+      hoteisPrompt += '- Subtitulo: "Fizemos uma nova busca e encontramos as melhores opcoes de hospedagem para a sua viagem!"\n';
+      hoteisPrompt += '- Inclua box verde de economia sobre cancelamento gratuito e reservar com antecedencia\n';
+      hoteisPrompt += '- Para cada hotel: card bonito com nome, nota, estrelas, bairro, descricao, diferencial, amenidades\n';
+      hoteisPrompt += '- OBRIGATORIO em cada hotel: aviso "Esse hotel esta esgotando rapido!" com icone de fogo e destaque visual\n';
+      hoteisPrompt += '- PROIBIDO mostrar precos dos hoteis\n';
+      hoteisPrompt += '- Use os links EXATAMENTE como fornecidos, sem modificar nenhum caractere\n';
+      hoteisPrompt += '- Botao de reserva em cada hotel: "Reserve com cancelamento gratis"\n';
+      hoteisPrompt += '- Rodape com "Equipe Grupo Dicas - grupodicas.com"\n';
+      hoteisPrompt += '- Retorne APENAS o HTML completo.\n';
+
+      var claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 8000,
+          messages: [{ role: 'user', content: hoteisPrompt }]
+        })
+      });
+
+      var claudeData = await claudeRes.json();
+      if (!claudeData.content || !claudeData.content[0]) {
+        console.error('Campanha: Claude sem resposta pra ' + f.Nome);
+        await atualizarAirtable(reg.id, { Hoteis_Campanha: 'Erro Claude' });
+        erros++;
+        continue;
+      }
+
+      var html = claudeData.content[0].text;
+      html = html.replace(/^```html\s*/i, '').replace(/```\s*$/i, '').trim();
+
+      // 3. Salvar no Blob
+      var hoteisId = 'hoteis_' + roteiroId;
+      var blob = await put('hoteis/' + hoteisId + '.html', html, {
+        access: 'public',
+        contentType: 'text/html; charset=utf-8',
+        addRandomSuffix: false,
+        token: process.env.BLOB_READ_WRITE_TOKEN
+      });
+      console.log('Campanha: salvo no Blob -', blob.url);
+
+      var hoteisUrl = 'https://grupo-dicas-roteiro.vercel.app/api/hoteis?id=' + hoteisId;
+      var resultados = [];
+
+      // 4. Enviar Email SEMPRE
+      try {
+        var emailRes = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + process.env.RESEND_API_KEY,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            from: 'Fernanda | Grupo Dicas <roteiros@grupodicas.com>',
+            reply_to: 'roteiros@grupodicas.com',
+            to: [f.Email],
+            subject: 'Aviso importante sobre seu roteiro de viagem!',
+            html: '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222222;line-height:1.6;max-width:600px;">'
+              + '<p>Ol\u00E1, ' + nomeFirst + '! \uD83C\uDFA8</p>'
+              + '<p>Notamos um problema importante no seu roteiro!</p>'
+              + '<p>Por algum motivo, os links dos hot\u00E9is foram gerados com um erro. A boa not\u00EDcia \u00E9 que fizemos uma nova busca atualizada, dos melhores hot\u00E9is, na data da sua viagem. Encontramos op\u00E7\u00F5es ainda melhores e com pre\u00E7os abaixo da m\u00E9dia para o per\u00EDodo.</p>'
+              + '<p>\uD83D\uDC49 <a href="' + hoteisUrl + '" style="color:#00BCD4;font-weight:bold;text-decoration:underline;">Veja os hot\u00E9is que selecionamos para voc\u00EA</a></p>'
+              + '<p>Reserve o quanto antes, pois esses hot\u00E9is esgotam r\u00E1pido e os pre\u00E7os devem subir em breve! \uD83D\uDD25</p>'
+              + '<div style="margin-top:32px;padding-top:24px;border-top:2px solid #E0F7FA;">'
+              + '<table cellpadding="0" cellspacing="0" border="0"><tr>'
+              + '<td style="padding-right:16px;border-right:3px solid #00BCD4;">'
+              + '<p style="margin:0;font-weight:700;color:#1A1A2E;font-size:16px;">Fernanda Rodrigues</p>'
+              + '<p style="margin:3px 0 0;color:#00BCD4;font-size:13px;font-weight:600;">Especialista em Roteiros</p>'
+              + '</td>'
+              + '<td style="padding-left:16px;">'
+              + '<p style="margin:0;font-size:20px;font-weight:800;letter-spacing:-0.5px;"><span style="color:#E91E8C;">GRUPO</span><span style="color:#00BCD4;">DICAS</span></p>'
+              + '<p style="margin:2px 0 0;color:#9CA3AF;font-size:11px;font-weight:500;">Roteiros Personalizados</p>'
+              + '</td>'
+              + '</tr></table>'
+              + '</div>'
+              + '</div>'
+          })
+        });
+        var emailData = await emailRes.json();
+        console.log('Campanha: email enviado pra ' + f.Email + ' - status:', emailRes.status);
+        resultados.push('Email: OK');
+      } catch(e) {
+        console.error('Campanha: erro email ' + f.Nome + ':', e.message);
+        resultados.push('Email: Erro');
+      }
+
+      // 5. Enviar WhatsApp (se tem celular)
+      if (f.Celular && f.Celular.trim() && process.env.WHATSAPP_TOKEN) {
+        var waNumber = f.Celular.replace(/\D/g, '');
+        if (waNumber.length === 11) waNumber = '55' + waNumber;
+
+        try {
+          var waRes = await fetch('https://graph.facebook.com/v25.0/' + process.env.WHATSAPP_PHONE_ID + '/messages', {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + process.env.WHATSAPP_TOKEN,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              messaging_product: 'whatsapp',
+              to: waNumber,
+              type: 'template',
+              template: {
+                name: 'hoteis_atualizados',
+                language: { code: 'pt_BR' },
+                components: [
+                  {
+                    type: 'body',
+                    parameters: [
+                      { type: 'text', text: nomeFirst },
+                      { type: 'text', text: hoteisUrl }
+                    ]
+                  },
+                  {
+                    type: 'button',
+                    sub_type: 'url',
+                    index: '0',
+                    parameters: [
+                      { type: 'text', text: hoteisId }
+                    ]
+                  }
+                ]
+              }
+            })
+          });
+          var waData = await waRes.json();
+          var waStatus = (waData.messages && waData.messages[0]) ? 'OK' : 'Erro';
+          console.log('Campanha: WhatsApp pra ' + f.Nome + ': ' + waStatus);
+          resultados.push('WA: ' + waStatus);
+        } catch(e) {
+          console.error('Campanha: erro WhatsApp ' + f.Nome + ':', e.message);
+          resultados.push('WA: Erro');
+        }
+      } else {
+        resultados.push('WA: Sem celular');
+      }
+
+      // 6. Marcar no Airtable
+      await atualizarAirtable(reg.id, { Hoteis_Campanha: new Date().toISOString() + ' | ' + resultados.join(' | ') });
+      enviados++;
+
+      // Delay entre envios
+      await new Promise(function(resolve) { setTimeout(resolve, 5000); });
+
+    } catch(e) {
+      console.error('Campanha erro ' + f.Nome + ':', e.message);
+      await atualizarAirtable(reg.id, { Hoteis_Campanha: 'Erro: ' + e.message });
+      erros++;
+    }
+  }
+
+  console.log('=== Campanha Hoteis finalizada: ' + enviados + ' enviados, ' + pulados + ' pulados, ' + erros + ' erros ===');
+}
+
 var PORT = process.env.PORT || 3000;
 app.listen(PORT, function() {
   console.log('Servidor rodando na porta ' + PORT);
