@@ -1596,7 +1596,7 @@ async function processarCampanhaHoteis() {
         },
         body: JSON.stringify({
           model: 'claude-opus-4-6',
-          max_tokens: 8000,
+          max_tokens: 32000,
           messages: [{ role: 'user', content: hoteisPrompt }]
         })
       });
