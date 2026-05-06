@@ -1035,9 +1035,9 @@ async function reenviarWhatsAppPendentes() {
 }
 
 // Rodar a cada 1 hora
-setInterval(reenviarWhatsAppPendentes, 60 * 60 * 1000);
-// Primeira execução 2 min após iniciar
-setTimeout(reenviarWhatsAppPendentes, 2 * 60 * 1000);
+// PAUSADO - Qualidade WhatsApp baixa
+// setInterval(reenviarWhatsAppPendentes, 60 * 60 * 1000);
+// setTimeout(reenviarWhatsAppPendentes, 2 * 60 * 1000);
 
 // =============================================================
 // ENVIO DE EMAIL + SMS (chamado pela fila)
@@ -1495,8 +1495,9 @@ async function loopCampanhaHoteis() {
   }
   campanhaHoteisRodando = false;
 }
-setInterval(loopCampanhaHoteis, 60 * 60 * 1000);
-setTimeout(loopCampanhaHoteis, 5 * 60 * 1000);
+// PAUSADO - Qualidade WhatsApp baixa
+// setInterval(loopCampanhaHoteis, 60 * 60 * 1000);
+// setTimeout(loopCampanhaHoteis, 5 * 60 * 1000);
 
 async function processarCampanhaHoteis() {
   // Cidades que temos na tabela de hoteis
