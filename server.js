@@ -1506,7 +1506,7 @@ async function processarCampanhaHoteis() {
   var allRecords = [];
   var offset = null;
   do {
-    var filter = encodeURIComponent("AND({Status}='Enviado',{Hoteis_Campanha}='')");
+    var filter = encodeURIComponent("AND({Status}='Enviado',{Hoteis_Campanha}='',SEARCH('hotel',LOWER({Ja_Tem}))=0)");
     var url = 'https://api.airtable.com/v0/' + process.env.AIRTABLE_BASE_ID + '/Pedidos?filterByFormula=' + filter + '&pageSize=100' + (offset ? '&offset=' + offset : '');
     var aRes = await fetch(url, {
       headers: { 'Authorization': 'Bearer ' + process.env.AIRTABLE_TOKEN }
