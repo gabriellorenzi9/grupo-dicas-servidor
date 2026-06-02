@@ -1189,7 +1189,7 @@ async function gerarHtmlComClaude(d) {
       requests: [{
         custom_id: customId,
         params: {
-          model: 'claude-opus-4-6',
+          model: 'claude-sonnet-4-6',
           max_tokens: 64000,
           system: [
             {
@@ -1596,7 +1596,7 @@ async function processarCampanhaHoteis() {
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model: 'claude-opus-4-6',
+          model: 'claude-sonnet-4-6',
           max_tokens: 32000,
           messages: [{ role: 'user', content: hoteisPrompt }]
         })
